@@ -51,6 +51,30 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    if (req.method === 'GET' && pathname === '/api/admin') {
+        const pwd = parsedUrl.searchParams.get('pwd');
+        const adminPassword = process.env.ADMIN_PASSWORD || 'rxm3rk_admin';
+        
+        if (pwd !== adminPassword) {
+            res.writeHead(401);
+            return res.end('Unauthorized');
+        }
+
+        try {
+            const dbData = fs.readFileSync(DB_FILE, 'utf8');
+            const blockedData = fs.readFileSync(BLOCKED_FILE, 'utf8');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ 
+                database: JSON.parse(dbData), 
+                blocked: JSON.parse(blockedData) 
+            }));
+        } catch(e) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ error: 'Database read error' }));
+        }
+        return;
+    }
+
     if (req.method === 'GET' && pathname === '/api/document') {
         const file = parsedUrl.searchParams.get('file');
         const user = parsedUrl.searchParams.get('user');
@@ -91,6 +115,9 @@ const server = http.createServer((req, res) => {
     }
 
     // Serve static files
+    if (pathname === '/admin') {
+        pathname = '/admin.html';
+    }
     let filePath = path.join(__dirname, pathname === '/' ? 'index.html' : pathname);
     
     // Decode URI component for files like PDFs with spaces

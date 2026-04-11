@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Platform Admin Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fa;
+            color: #333;
+            margin: 0;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 900px;
+            background: #fff;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.05);
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            margin-top: 0;
+            letter-spacing: -0.02em;
+        }
+
+        #login-section {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            max-width: 400px;
+            margin: auto;
+            text-align: center;
+        }
+
+        input[type="password"] {
+            padding: 0.8rem;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-family: 'Inter', sans-serif;
+        }
+
+        button {
+            padding: 0.8rem 1.5rem;
+            background: #000;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: 0.2s ease;
+        }
+
+        button:hover {
+            background: #333;
+        }
+
+        #dashboard {
+            display: none;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+            font-size: 0.95rem;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 1rem;
+            border-bottom: 1px solid #eee;
+        }
+
+        th {
+            background-color: #fcfcfc;
+            font-weight: 600;
+            color: #666;
+        }
+
+        .blocked-badge {
+            background: #ffe3e3;
+            color: #d10000;
+            padding: 4px 8px;
+            border-radius: 99px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .status-msg {
+            color: red;
+            margin-top: 10px;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container" id="login-section">
+        <h1>Admin Access</h1>
+        <p style="color:#666; margin-bottom:1.5rem; font-size: 0.9rem;">Enter the master password to view the database.</p>
+        <input type="password" id="pwd" placeholder="Enter password" onkeydown="if(event.key === 'Enter') loadData()">
+        <button onclick="loadData()">Unlock Database</button>
+        <div id="error-msg" class="status-msg"></div>
+    </div>
+
+    <div class="container" id="dashboard">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+            <h1>Live Database Logs</h1>
+            <button onclick="location.reload()" style="background: #efefef; color: #000;">Refresh Data</button>
+        </div>
+
+        <h3>Blocked Users List</h3>
+        <p id="blocked-list" style="color: #d10000; font-weight: 500;">Loading...</p>
+        <hr style="border: none; border-top: 1px solid #eee; margin: 2rem 0;">
+
+        <h3>Access History</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>C3 Username</th>
+                    <th>PDF Accessed</th>
+                </tr>
+            </thead>
+            <tbody id="logs-body">
+                <!-- Data goes here -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        async function loadData() {
+            const pwd = document.getElementById('pwd').value;
+            if (!pwd) return;
+
+            document.getElementById('error-msg').innerText = "Unlocking...";
+
+            try {
+                const res = await fetch('/api/admin?pwd=' + encodeURIComponent(pwd));
+                if (res.status === 401) {
+                    document.getElementById('error-msg').innerText = "Incorrect Password!";
+                    return;
+                }
+
+                const data = await res.json();
+                
+                document.getElementById('login-section').style.display = 'none';
+                document.getElementById('dashboard').style.display = 'block';
+
+                // Render Blocked Users
+                const blockedList = document.getElementById('blocked-list');
+                if (data.blocked && data.blocked.length > 0) {
+                    blockedList.innerHTML = data.blocked.map(u => `<span class="blocked-badge">${u}</span>`).join(' ');
+                } else {
+                    blockedList.innerHTML = "<span style='color: #666;'>No users currently blocked.</span>";
+                }
+
+                // Render DB Logs
+                const tbody = document.getElementById('logs-body');
+                tbody.innerHTML = '';
+                
+                if (data.database && data.database.length > 0) {
+                    // Reverse to show newest first
+                    const reversedDb = [...data.database].reverse();
+                    reversedDb.forEach(log => {
+                        const tr = document.createElement('tr');
+                        const dateObj = new Date(log.timestamp);
+                        const cleanTime = dateObj.toLocaleString();
+
+                        tr.innerHTML = `
+                            <td style="color: #666; font-size: 0.85rem;">${cleanTime}</td>
+                            <td style="font-weight: 600;">${log.username}</td>
+                            <td>${log.pdfVersion}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: #888;">No access logs found yet.</td></tr>';
+                }
+
+            } catch(e) {
+                document.getElementById('error-msg').innerText = "Server Error. Are you running the server?";
+                console.error(e);
+            }
+        }
+    </script>
+</body>
+</html>

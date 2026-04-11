@@ -38,6 +38,11 @@ const server = http.createServer((req, res) => {
     const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
     let pathname = parsedUrl.pathname;
 
+    if (pathname === '/health') {
+        res.writeHead(200);
+        return res.end('OK');
+    }
+
     if (req.method === 'POST' && pathname === '/api/login') {
         let body = '';
         req.on('data', chunk => {
@@ -196,7 +201,7 @@ const server = http.createServer((req, res) => {
     });
 });
 
-server.listen(PORT, () => {
-    console.log(`Server running at http://localhost:${PORT}/`);
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
     console.log(`Database logs saved to: ${DB_FILE}`);
 });

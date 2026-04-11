@@ -418,7 +418,7 @@
 
                 btn.innerText = originalText;
                 btn.disabled = false;
-                window.open('viewer.html?file=' + encodeURIComponent(pdfVersion) + '&user=' + encodeURIComponent(username), '_blank');
+                window.location.href = 'viewer.html?file=' + encodeURIComponent(pdfVersion) + '&user=' + encodeURIComponent(username);
                 closeModal();
             }
         }

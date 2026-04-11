@@ -161,6 +161,15 @@
         const pdfContainer = document.getElementById('pdf-container');
         const zoomLabel = document.getElementById('zoomLabel');
 
+        // Dynamically set initial CSS zoom to fit mobile screens perfectly without losing pixel quality
+        const initScrWidth = window.innerWidth - 30;
+        // Typical unscaled PDF width is ~600px.
+        if(initScrWidth < 600) {
+            globalZoom = Math.max(initScrWidth / 600, 0.4); 
+            pdfContainer.style.transform = `scale(${globalZoom})`;
+            zoomLabel.innerText = Math.round(globalZoom * 100) + '%';
+        }
+
         document.getElementById('zoomInBtn').addEventListener('click', () => {
             if (globalZoom < 3.0) updateZoom(globalZoom + 0.2);
         });
@@ -230,10 +239,8 @@
             
             function renderPage(pdf, pageNum) {
                 pdf.getPage(pageNum).then(function(page) {
-                    const unscaledViewport = page.getViewport({scale: 1.0});
-                    const containerWidth = window.innerWidth - 30; // Margin padding
-                    const dynamicScale = containerWidth / unscaledViewport.width;
-                    const baseScale = Math.min(dynamicScale, 1.5); // Cap to 1.5 on PC
+                    // Always render at high quality base scale regardless of screen
+                    const baseScale = 1.5;
                     const viewport = page.getViewport({scale: baseScale});
 
                     // Retina / High-DPI handling with strict memory limit for iOS crash prevention

@@ -48,6 +48,9 @@
             top: 0;
             left: 0;
             z-index: 10;
+        }
+
+        body.draw-mode .page-overlay {
             touch-action: none;
         }
 
@@ -181,9 +184,12 @@
             isDrawMode = !isDrawMode;
             if (isDrawMode) {
                 drawToggle.classList.add('active');
+                document.body.classList.add('draw-mode');
+                // Prevent touch scrolling globally when draw mode is on to avoid accidental jumps
                 document.body.style.overflow = 'hidden'; 
             } else {
                 drawToggle.classList.remove('active');
+                document.body.classList.remove('draw-mode');
                 document.body.style.overflow = 'auto';
             }
         });

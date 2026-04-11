@@ -168,7 +168,7 @@
             globalZoom = Math.max(initScrWidth / 600, 0.4); 
             pdfContainer.style.zoom = globalZoom;
             pdfContainer.style.transform = `scale(${globalZoom})`; // Fallback
-            if (window.CSS && CSS.supports("zoom", globalZoom)) pdfContainer.style.transform = 'none';
+            if (window.CSS && CSS.supports("zoom", globalZoom.toString())) pdfContainer.style.transform = 'none';
             zoomLabel.innerText = Math.round(globalZoom * 100) + '%';
         }
 
@@ -183,7 +183,7 @@
             pdfContainer.style.zoom = globalZoom;
             pdfContainer.style.transform = `scale(${globalZoom})`; // Fallback
             // If safari zoom works natively (iOS), strip transform to allow structural scrollbars
-            if (window.CSS && CSS.supports("zoom", globalZoom)) pdfContainer.style.transform = 'none';
+            if (window.CSS && CSS.supports("zoom", globalZoom.toString())) pdfContainer.style.transform = 'none';
             zoomLabel.innerText = Math.round(globalZoom * 100) + '%';
         }
 
@@ -226,13 +226,45 @@
             // Configure PDF.js worker
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
+            let pageObserver;
+
             const loadingTask = pdfjsLib.getDocument(pdfUrl);
             loadingTask.promise.then(function(pdf) {
                 document.getElementById('loader').style.display = 'none';
-                
-                for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-                    renderPage(pdf, pageNum);
-                }
+
+                // Setup Virtualization Observer to prevent iPhone Canvas RAM crashes
+                pageObserver = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) {
+                            const container = entry.target;
+                            const pageNum = parseInt(container.dataset.page);
+                            if (!container.dataset.loaded) {
+                                container.dataset.loaded = 'true';
+                                renderPageContent(pdf, pageNum, container);
+                            }
+                        }
+                    });
+                }, { rootMargin: '150% 0px' });
+
+                // Render first page to map dimensions, then spawn placeholders
+                pdf.getPage(1).then(function(page) {
+                    const baseScale = 1.5;
+                    const viewport = page.getViewport({scale: baseScale});
+                    const cssWidth = viewport.width;
+                    const cssHeight = viewport.height;
+
+                    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                        const container = document.createElement('div');
+                        container.className = 'page-container';
+                        container.dataset.page = pageNum;
+                        container.style.width = cssWidth + "px";
+                        container.style.height = cssHeight + "px";
+                        container.style.maxWidth = "100%";
+                        document.getElementById('pdf-container').appendChild(container);
+                        pageObserver.observe(container);
+                    }
+                });
+
             }, function (reason) {
                 console.error(reason);
                 if (reason.message && reason.message.includes('403')) {
@@ -242,7 +274,7 @@
                 }
             });
             
-            function renderPage(pdf, pageNum) {
+            function renderPageContent(pdf, pageNum, container) {
                 pdf.getPage(pageNum).then(function(page) {
                     // Always render at high quality base scale regardless of screen
                     const baseScale = 1.5;
@@ -252,9 +284,7 @@
                     const nativeDpr = window.devicePixelRatio || 1;
                     const outputScale = Math.min(nativeDpr, 1.5);
 
-                    // Container
-                    const container = document.createElement('div');
-                    container.className = 'page-container';
+                    // Update exact dimensions
                     container.style.width = viewport.width + "px";
                     container.style.height = viewport.height + "px";
                     
@@ -362,9 +392,6 @@
 
                     container.appendChild(canvas);
                     container.appendChild(overlay);
-                    pdfContainer.appendChild(container);
-
-                    // Render Native Quality
                     const renderContext = {
                         canvasContext: context,
                         transform: transform,

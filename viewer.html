@@ -230,7 +230,10 @@
             
             function renderPage(pdf, pageNum) {
                 pdf.getPage(pageNum).then(function(page) {
-                    const baseScale = 1.5;
+                    const unscaledViewport = page.getViewport({scale: 1.0});
+                    const containerWidth = window.innerWidth - 30; // Margin padding
+                    const dynamicScale = containerWidth / unscaledViewport.width;
+                    const baseScale = Math.min(dynamicScale, 1.5); // Cap to 1.5 on PC
                     const viewport = page.getViewport({scale: baseScale});
 
                     // Retina / High-DPI handling with strict memory limit for iOS crash prevention

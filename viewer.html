@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
     <title>Secure Document Viewer</title>
     <!-- Use PDF.js from unpkg/cdnjs -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
@@ -10,17 +10,14 @@
         body, html {
             margin: 0;
             padding: 0;
-            background-color: #f0f0f0;
+            background-color: #e5e5e5;
             height: 100%;
             overflow: auto;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            user-select: none; /* Prevent text selection */
+            user-select: none;
             -webkit-user-select: none;
-            -moz-user-select: none;
-            -ms-user-select: none;
         }
 
-        /* Prevent printing using css */
         @media print {
             body { display: none !important; }
         }
@@ -30,88 +27,125 @@
             flex-direction: column;
             align-items: center;
             padding: 2rem 0;
+            transform-origin: top center;
+            transition: transform 0.2s ease;
+            margin-top: 60px;
         }
 
         .page-container {
             position: relative;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            margin-bottom: 25px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            background: #fff;
         }
 
         canvas {
             display: block;
         }
 
-        /* Obscurant overlay over the canvas */
         .page-overlay {
             position: absolute;
             top: 0;
             left: 0;
             z-index: 10;
-            touch-action: none; /* Helpful for touch drawing */
+            touch-action: none;
         }
 
-        /* Top header for navigation / info */
         #toolbar {
             position: fixed;
             top: 0;
+            left: 0;
             width: 100%;
             background: #2b2b2b;
-            color: #ccc;
-            height: 50px;
+            color: #ddd;
+            height: 60px;
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            padding: 0 20px;
+            justify-content: flex-start;
+            padding: 0 15px;
             box-sizing: border-box;
             z-index: 100;
-            user-select: none;
+            overflow-x: auto;
+            white-space: nowrap;
+            -webkit-overflow-scrolling: touch;
         }
 
-        #toolbar span {
-            font-size: 14px;
-            letter-spacing: 0.5px;
+        /* Hide scrollbar for toolbar */
+        #toolbar::-webkit-scrollbar { display: none; }
+        #toolbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .toolbar-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-right: 20px;
+            border-right: 1px solid #444;
+            padding-right: 20px;
+        }
+        .toolbar-group:last-child {
+            border-right: none;
         }
 
         .toolbar-btn {
-            background: #444; border: none; color: #fff; padding: 6px 16px; border-radius: 4px; cursor: pointer;
-            font-size: 14px; transition: background 0.2s;
+            background: #444; border: none; color: #fff; padding: 6px 12px; border-radius: 6px; cursor: pointer;
+            font-size: 13px; font-weight: 500; transition: 0.2s; white-space: nowrap;
+            display: flex; justify-content: center; align-items: center;
         }
+        .toolbar-btn:hover { background: #555; }
         .toolbar-btn.active {
-            background: #007bff;
-            color: white;
-            font-weight: bold;
+            background: #007bff; color: white;
         }
+        .toolbar-btn.active-eraser {
+            background: #dc3545; color: white;
+        }
+
+        .color-picker {
+            width: 30px; height: 30px; padding: 0; border: none; border-radius: 50%;
+            cursor: pointer; background: transparent; overflow: hidden;
+        }
+        .color-picker::-webkit-color-swatch-wrapper { padding: 0; }
+        .color-picker::-webkit-color-swatch { border: 2px solid #555; border-radius: 50%; }
 
         #loader {
             position: fixed;
-            top: 50%;
-            left: 50%;
+            top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            font-size: 18px;
-            font-weight: 500;
-            color: #555;
+            font-size: 16px;
+            color: #333;
+            background: #fff; padding: 10px 20px; border-radius: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
     </style>
 </head>
 <body oncontextmenu="return false;">
 
     <div id="toolbar">
-        <span>Confidential Material</span>
-        <button id="drawToggle" class="toolbar-btn">Enable Draw Mode</button>
+        <div class="toolbar-group">
+            <span style="font-weight: 600; font-size: 14px; margin-right: 5px;">View</span>
+            <button class="toolbar-btn" id="zoomOutBtn">–</button>
+            <span id="zoomLabel" style="font-size: 13px; min-width: 35px; text-align: center;">100%</span>
+            <button class="toolbar-btn" id="zoomInBtn">+</button>
+        </div>
+
+        <div class="toolbar-group">
+            <button id="drawToggle" class="toolbar-btn">Draw Mode</button>
+            <input type="color" id="drawColor" class="color-picker" value="#ff0000" title="Choose Color">
+            <button id="eraserToggle" class="toolbar-btn">Eraser</button>
+        </div>
+        
+        <div class="toolbar-group">
+            <span style="font-size: 12px; color: #888;">Confidential & Protected</span>
+        </div>
     </div>
 
     <div id="loader">Loading secure document...</div>
-    <div id="pdf-container" style="margin-top: 50px;"></div>
+    <div id="pdf-container"></div>
 
     <script>
-        // Disable printing via Ctrl+P
+        // Disable printing
         document.addEventListener('keydown', function(event) {
             if ((event.ctrlKey || event.metaKey) && event.key === 'p') {
-                event.cancelBubble = true;
-                event.preventDefault();
-                event.stopImmediatePropagation();
-                return false;
+                event.preventDefault(); return false;
             }
         });
 
@@ -119,20 +153,48 @@
         const fileName = urlParams.get('file');
         const user = urlParams.get('user');
 
+        // Zoom state
+        let globalZoom = 1.0;
+        const pdfContainer = document.getElementById('pdf-container');
+        const zoomLabel = document.getElementById('zoomLabel');
+
+        document.getElementById('zoomInBtn').addEventListener('click', () => {
+            if (globalZoom < 3.0) updateZoom(globalZoom + 0.2);
+        });
+        document.getElementById('zoomOutBtn').addEventListener('click', () => {
+            if (globalZoom > 0.4) updateZoom(globalZoom - 0.2);
+        });
+        function updateZoom(newZoom) {
+            globalZoom = newZoom;
+            pdfContainer.style.transform = `scale(${globalZoom})`;
+            zoomLabel.innerText = Math.round(globalZoom * 100) + '%';
+        }
+
+        // Draw State
         let isDrawMode = false;
+        let isEraserMode = false;
         const drawToggle = document.getElementById('drawToggle');
+        const eraserToggle = document.getElementById('eraserToggle');
+        const drawColorInput = document.getElementById('drawColor');
 
         drawToggle.addEventListener('click', () => {
             isDrawMode = !isDrawMode;
             if (isDrawMode) {
                 drawToggle.classList.add('active');
-                drawToggle.innerText = 'Draw Mode: ON';
-                // Prevent touch scrolling globally when draw mode is on
                 document.body.style.overflow = 'hidden'; 
             } else {
                 drawToggle.classList.remove('active');
-                drawToggle.innerText = 'Enable Draw Mode';
                 document.body.style.overflow = 'auto';
+            }
+        });
+
+        eraserToggle.addEventListener('click', () => {
+            isEraserMode = !isEraserMode;
+            if (isEraserMode) {
+                eraserToggle.classList.add('active-eraser');
+                if(!isDrawMode) drawToggle.click(); // Auto enable draw mode
+            } else {
+                eraserToggle.classList.remove('active-eraser');
             }
         });
 
@@ -144,12 +206,10 @@
             // Configure PDF.js worker
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
-            // Loading the PDF.
             const loadingTask = pdfjsLib.getDocument(pdfUrl);
             loadingTask.promise.then(function(pdf) {
                 document.getElementById('loader').style.display = 'none';
                 
-                // Fetch and render all pages
                 for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
                     renderPage(pdf, pageNum);
                 }
@@ -158,85 +218,115 @@
                 if (reason.message && reason.message.includes('403')) {
                     document.getElementById('loader').innerText = "Access Denied: Your account has been blocked.";
                 } else {
-                    document.getElementById('loader').innerText = "Failed to load secure document. Access Denied.";
+                    document.getElementById('loader').innerText = "Failed to load secure document.";
                 }
             });
             
             function renderPage(pdf, pageNum) {
                 pdf.getPage(pageNum).then(function(page) {
-                    const scale = 1.5;
-                    const viewport = page.getViewport({scale: scale});
+                    const baseScale = 1.5;
+                    const viewport = page.getViewport({scale: baseScale});
 
-                    // Prepare outer container
+                    // Retina / High-DPI handling
+                    const outputScale = window.devicePixelRatio || 1;
+
+                    // Container
                     const container = document.createElement('div');
                     container.className = 'page-container';
                     container.style.width = viewport.width + "px";
                     container.style.height = viewport.height + "px";
                     
-                    // Create canvas layer
+                    // Base PDF Canvas
                     const canvas = document.createElement('canvas');
                     const context = canvas.getContext('2d');
-                    canvas.height = viewport.height;
-                    canvas.width = viewport.width;
+                    
+                    canvas.width = Math.floor(viewport.width * outputScale);
+                    canvas.height = Math.floor(viewport.height * outputScale);
+                    canvas.style.width = viewport.width + "px";
+                    canvas.style.height = viewport.height + "px";
 
-                    // Create transparent drawing overlay
+                    const transform = outputScale !== 1 
+                        ? [outputScale, 0, 0, outputScale, 0, 0] 
+                        : null;
+
+                    // Drawing Overlay Canvas
                     const overlay = document.createElement('canvas');
                     overlay.className = 'page-overlay';
-                    overlay.width = viewport.width;
-                    overlay.height = viewport.height;
+                    overlay.width = canvas.width;
+                    overlay.height = canvas.height;
+                    overlay.style.width = viewport.width + "px";
+                    overlay.style.height = viewport.height + "px";
+                    
                     const overlayCtx = overlay.getContext('2d');
-                    overlayCtx.lineCap = 'round';
-                    overlayCtx.lineJoin = 'round';
-                    overlayCtx.lineWidth = 3;
-                    overlayCtx.strokeStyle = 'rgba(255, 0, 0, 0.7)'; // Red highlighter
+                    if (outputScale !== 1) overlayCtx.scale(outputScale, outputScale);
 
-                    // Load saved drawing if any
+                    // Load saved drawing
                     const storageKey = `annotation_${user}_${fileName}_p${pageNum}`;
                     const savedData = localStorage.getItem(storageKey);
                     if (savedData) {
                         const img = new Image();
-                        img.onload = () => { overlayCtx.drawImage(img, 0, 0); };
+                        img.onload = () => { overlayCtx.drawImage(img, 0, 0, viewport.width, viewport.height); };
                         img.src = savedData;
                     }
 
-                    // Drawing logic
+                    // Touch / Mouse Drawing Logic
                     let isDrawing = false;
                     let lastX = 0;
                     let lastY = 0;
+
+                    function getPos(e) {
+                        const rect = overlay.getBoundingClientRect();
+                        // Adjust coordinates based on the current CSS transform zoom
+                        const scaleX = rect.width / overlay.offsetWidth;
+                        const scaleY = rect.height / overlay.offsetHeight;
+
+                        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+                        return {
+                            x: (clientX - rect.left) / scaleX,
+                            y: (clientY - rect.top) / scaleY
+                        };
+                    }
 
                     function startDraw(e) {
                         if (!isDrawMode) return;
                         e.preventDefault();
                         isDrawing = true;
-                        const rect = overlay.getBoundingClientRect();
-                        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-                        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-                        lastX = clientX - rect.left;
-                        lastY = clientY - rect.top;
+                        const pos = getPos(e);
+                        lastX = pos.x;
+                        lastY = pos.y;
                     }
 
                     function draw(e) {
                         if (!isDrawing || !isDrawMode) return;
                         e.preventDefault();
-                        const rect = overlay.getBoundingClientRect();
-                        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-                        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-                        const currentX = clientX - rect.left;
-                        const currentY = clientY - rect.top;
+                        const pos = getPos(e);
+
+                        overlayCtx.lineCap = 'round';
+                        overlayCtx.lineJoin = 'round';
+
+                        if (isEraserMode) {
+                            overlayCtx.globalCompositeOperation = 'destination-out';
+                            overlayCtx.lineWidth = 20; // Larger eraser
+                        } else {
+                            overlayCtx.globalCompositeOperation = 'source-over';
+                            overlayCtx.lineWidth = 3;
+                            overlayCtx.strokeStyle = drawColorInput.value;
+                        }
 
                         overlayCtx.beginPath();
                         overlayCtx.moveTo(lastX, lastY);
-                        overlayCtx.lineTo(currentX, currentY);
+                        overlayCtx.lineTo(pos.x, pos.y);
                         overlayCtx.stroke();
                         
-                        lastX = currentX;
-                        lastY = currentY;
+                        lastX = pos.x;
+                        lastY = pos.y;
                     }
 
                     function endDraw() {
                         if (!isDrawing) return;
                         isDrawing = false;
-                        // Save to local storage
                         localStorage.setItem(storageKey, overlay.toDataURL());
                     }
 
@@ -250,11 +340,12 @@
 
                     container.appendChild(canvas);
                     container.appendChild(overlay);
-                    document.getElementById('pdf-container').appendChild(container);
+                    pdfContainer.appendChild(container);
 
-                    // Render PDF page into canvas context
+                    // Render Native Quality
                     const renderContext = {
                         canvasContext: context,
+                        transform: transform,
                         viewport: viewport
                     };
                     page.render(renderContext);

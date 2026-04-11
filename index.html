@@ -40,6 +40,35 @@
             padding: 2.5rem 5%;
             max-width: 1400px;
             margin: 0 auto;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+        }
+
+        .author-tag {
+            font-size: 0.85rem; 
+            color: var(--text-muted); 
+            font-weight: 500; 
+            font-family: 'Inter', sans-serif; 
+            letter-spacing: 0.02em;
+            text-align: center;
+            flex: 1 1 auto;
+        }
+
+        @media (max-width: 600px) {
+            .top-bar {
+                flex-direction: column;
+                justify-content: center;
+                gap: 1rem;
+            }
+            .author-tag {
+                order: 3;
+            }
+            .logo {
+                text-align: center;
+            }
+            .btn {
+                width: 100%;
+            }
         }
 
         .logo {
@@ -285,9 +314,9 @@
 </head>
 <body>
 
-    <header class="top-bar" style="position: relative;">
+    <header class="top-bar">
         <div class="logo">Medical Finals.</div>
-        <div style="position: absolute; left: 50%; transform: translateX(-50%); font-size: 0.85rem; color: var(--text-muted); font-weight: 500; font-family: 'Inter', sans-serif; letter-spacing: 0.02em;">Made by @rxm3rk</div>
+        <div class="author-tag">Made by @rxm3rk</div>
         <button class="btn" onclick="openModal()">Access Question Bank</button>
     </header>
 

@@ -131,6 +131,7 @@
                     <th>Timestamp</th>
                     <th>C3 Username</th>
                     <th>PDF Accessed</th>
+                    <th>Action</th>
                 </tr>
             </thead>
             <tbody id="logs-body">
@@ -182,6 +183,7 @@
                             <td style="color: #666; font-size: 0.85rem;">${cleanTime}</td>
                             <td style="font-weight: 600;">${log.username}</td>
                             <td>${log.pdfVersion}</td>
+                            <td><button onclick="deleteLog('${log.timestamp}', '${log.username}')" style="padding: 4px 10px; font-size: 0.75rem; background: #dc3545;">Delete</button></td>
                         `;
                         tbody.appendChild(tr);
                     });
@@ -192,6 +194,23 @@
             } catch(e) {
                 document.getElementById('error-msg').innerText = "Server Error. Are you running the server?";
                 console.error(e);
+            }
+        }
+
+        async function deleteLog(timestamp, username) {
+            if (!confirm("Are you sure you want to delete this log?")) return;
+            const pwd = document.getElementById('pwd').value;
+            try {
+                const res = await fetch(`/api/admin?pwd=${encodeURIComponent(pwd)}&timestamp=${encodeURIComponent(timestamp)}&username=${encodeURIComponent(username)}`, {
+                    method: 'DELETE'
+                });
+                if (res.ok) {
+                    loadData(); // Refresh UI
+                } else {
+                    alert("Failed to delete the log.");
+                }
+            } catch(e) {
+                alert("Error deleting log.");
             }
         }
     </script>

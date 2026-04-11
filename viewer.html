@@ -233,8 +233,9 @@
                     const baseScale = 1.5;
                     const viewport = page.getViewport({scale: baseScale});
 
-                    // Retina / High-DPI handling
-                    const outputScale = window.devicePixelRatio || 1;
+                    // Retina / High-DPI handling with strict memory limit for iOS crash prevention
+                    const nativeDpr = window.devicePixelRatio || 1;
+                    const outputScale = Math.min(nativeDpr, 1.5);
 
                     // Container
                     const container = document.createElement('div');

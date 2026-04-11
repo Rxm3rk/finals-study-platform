@@ -75,6 +75,37 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    if (req.method === 'DELETE' && pathname === '/api/admin') {
+        const pwd = parsedUrl.searchParams.get('pwd');
+        const timestamp = parsedUrl.searchParams.get('timestamp');
+        const username = parsedUrl.searchParams.get('username');
+        const adminPassword = process.env.ADMIN_PASSWORD || 'rxm3rk_admin';
+        
+        if (pwd !== adminPassword) {
+            res.writeHead(401);
+            return res.end('Unauthorized');
+        }
+
+        try {
+            let dbData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+            const initialLength = dbData.length;
+            dbData = dbData.filter(log => !(log.timestamp === timestamp && log.username === username));
+            
+            if (dbData.length !== initialLength) {
+                fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2));
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+            } else {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Record not found' }));
+            }
+        } catch(e) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Database write error' }));
+        }
+        return;
+    }
+
     if (req.method === 'GET' && pathname === '/api/document') {
         const file = parsedUrl.searchParams.get('file');
         const user = parsedUrl.searchParams.get('user');

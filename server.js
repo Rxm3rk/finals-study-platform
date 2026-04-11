@@ -2,7 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 // Dedicated Volume Persistent Storage Mapping
 const VOL_PATH = '/app/data';
 const IS_PROD_VOL = fs.existsSync(VOL_PATH);

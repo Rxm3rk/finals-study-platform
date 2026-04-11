@@ -2,6 +2,15 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
+// Global crash handlers to prevent silent Railway deaths
+process.on('uncaughtException', (err) => {
+    console.error('[FATAL] Uncaught Exception:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[FATAL] Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+
 const PORT = process.env.PORT || 3000;
 // Dedicated Volume Persistent Storage Mapping
 const VOL_PATH = '/app/data';
@@ -30,13 +39,29 @@ if (!fs.existsSync(BLOCKED_FILE)) {
     }
 }
 
-const server = http.createServer((req, res) => {
-    // CORS headers just in case
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+console.log(`[INFO] Startup: Node ${process.version}`);
+console.log(`[INFO] Working Directory: ${__dirname}`);
+console.log(`[INFO] Persistence set to: ${DB_FILE}`);
 
-    const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
-    let pathname = parsedUrl.pathname;
+try {
+    const testWrite = path.join(WORK_DIR, '.write_test');
+    fs.writeFileSync(testWrite, 'ok');
+    fs.unlinkSync(testWrite);
+    console.log('[INFO] Volume write test: SUCCESS');
+} catch(e) {
+    console.error('[ERROR] Volume write test: FAILED. Persistence will crash.', e);
+}
+
+const server = http.createServer((req, res) => {
+    try {
+        // CORS headers just in case
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        const host = req.headers.host || 'localhost';
+        const parsedUrl = new URL(req.url, `http://${host}`);
+        let pathname = parsedUrl.pathname;
+
 
     if (pathname === '/health') {
         res.writeHead(200);
@@ -199,6 +224,12 @@ const server = http.createServer((req, res) => {
             res.end(content, 'utf-8');
         }
     });
+
+    } catch (routeErr) {
+        console.error('[ERROR] Runtime Crash in route:', req.url, routeErr);
+        res.writeHead(500);
+        res.end('Internal Server Error');
+    }
 });
 
 server.listen(PORT, '0.0.0.0', () => {

@@ -3,22 +3,37 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = 3000;
-const DB_FILE = path.join(__dirname, 'database.json');
+// Dedicated Volume Persistent Storage Mapping
+const VOL_PATH = '/app/data';
+const IS_PROD_VOL = fs.existsSync(VOL_PATH);
+const WORK_DIR = IS_PROD_VOL ? VOL_PATH : __dirname;
 
-// Initialize DB if not exists
+const DB_FILE = path.join(WORK_DIR, 'database.json');
+const BLOCKED_FILE = path.join(WORK_DIR, 'blocked.json');
+
+// Initialize Local/Volume DB & Copy existing tracked data if present
 if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, JSON.stringify([], null, 2));
+    const localDbPath = path.join(__dirname, 'database.json');
+    if (fs.existsSync(localDbPath) && IS_PROD_VOL) {
+        fs.copyFileSync(localDbPath, DB_FILE); // Carry over the GitHub commit data into the new Volume
+    } else {
+        fs.writeFileSync(DB_FILE, JSON.stringify([], null, 2));
+    }
+}
+
+if (!fs.existsSync(BLOCKED_FILE)) {
+    const localBlockedPath = path.join(__dirname, 'blocked.json');
+    if (fs.existsSync(localBlockedPath) && IS_PROD_VOL) {
+        fs.copyFileSync(localBlockedPath, BLOCKED_FILE);
+    } else {
+        fs.writeFileSync(BLOCKED_FILE, JSON.stringify([], null, 2));
+    }
 }
 
 const server = http.createServer((req, res) => {
     // CORS headers just in case
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-    const BLOCKED_FILE = path.join(__dirname, 'blocked.json');
-    if (!fs.existsSync(BLOCKED_FILE)) {
-        fs.writeFileSync(BLOCKED_FILE, JSON.stringify([], null, 2));
-    }
 
     const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
     let pathname = parsedUrl.pathname;

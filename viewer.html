@@ -26,9 +26,9 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            padding: 2rem 0;
+            padding: 10vh 20vw; /* Create a large interactive canvas sandbox padding */
             transform-origin: top center;
-            transition: transform 0.2s ease;
+            transition: transform 0.2s ease, zoom 0.2s ease;
             margin-top: 60px;
         }
 
@@ -166,7 +166,9 @@
         // Typical unscaled PDF width is ~600px.
         if(initScrWidth < 600) {
             globalZoom = Math.max(initScrWidth / 600, 0.4); 
-            pdfContainer.style.transform = `scale(${globalZoom})`;
+            pdfContainer.style.zoom = globalZoom;
+            pdfContainer.style.transform = `scale(${globalZoom})`; // Fallback
+            if (window.CSS && CSS.supports("zoom", globalZoom)) pdfContainer.style.transform = 'none';
             zoomLabel.innerText = Math.round(globalZoom * 100) + '%';
         }
 
@@ -178,7 +180,10 @@
         });
         function updateZoom(newZoom) {
             globalZoom = newZoom;
-            pdfContainer.style.transform = `scale(${globalZoom})`;
+            pdfContainer.style.zoom = globalZoom;
+            pdfContainer.style.transform = `scale(${globalZoom})`; // Fallback
+            // If safari zoom works natively (iOS), strip transform to allow structural scrollbars
+            if (window.CSS && CSS.supports("zoom", globalZoom)) pdfContainer.style.transform = 'none';
             zoomLabel.innerText = Math.round(globalZoom * 100) + '%';
         }
 

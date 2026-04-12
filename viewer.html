@@ -395,9 +395,19 @@
                     const rect = activeCanvas.getBoundingClientRect();
                     const scaleX = rect.width / activeCanvas.offsetWidth;
                     const scaleY = rect.height / activeCanvas.offsetHeight;
-                    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-                    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-                    return { x: (clientX - rect.left) / scaleX, y: (clientY - rect.top) / scaleY };
+                    
+                    // Use pageX/pageY to bypass iOS visualViewport coordinate drift (collapsing address bars)
+                    const touch = e.touches ? e.touches[0] : e;
+                    const pageX = touch.pageX !== undefined ? touch.pageX : (touch.clientX + window.scrollX);
+                    const pageY = touch.pageY !== undefined ? touch.pageY : (touch.clientY + window.scrollY);
+
+                    const canvasPageX = rect.left + window.scrollX;
+                    const canvasPageY = rect.top + window.scrollY;
+
+                    return { 
+                        x: (pageX - canvasPageX) / scaleX, 
+                        y: (pageY - canvasPageY) / scaleY 
+                    };
                 }
 
                 function startDraw(e) {

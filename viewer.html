@@ -266,32 +266,21 @@
                     });
                 }, { rootMargin: '-50% 0px' });
 
-                // Setup Virtualization Observer to prevent iPhone Canvas RAM crashes
-                pageObserver = new IntersectionObserver((entries) => {
-                    entries.forEach(entry => {
-                        const container = entry.target;
-                        const pageNum = parseInt(container.dataset.page);
-
-                        if (entry.isIntersecting) {
-                            if (container.dataset.loaded !== 'true') {
-                                container.dataset.loaded = 'true';
-                                renderPageContent(pdf, pageNum, container);
-                            }
-                        } else {
-                            if (container.dataset.loaded === 'true') {
-                                container.innerHTML = ''; // Unload canvas to free RAM
-                                container.dataset.loaded = 'false';
-                            }
-                        }
-                    });
-                }, { rootMargin: '200% 0px' });
-
-                // Render first page to map dimensions, then spawn placeholders
-                pdf.getPage(1).then(function(page) {
+                // Sequentially process ALL pages to IMGs to safely bypass iOS Canvas RAM limits
+                const processAllPages = async () => {
                     const baseScale = 1.5;
-                    const viewport = page.getViewport({scale: baseScale});
-                    const cssWidth = viewport.width;
-                    const cssHeight = viewport.height;
+                    const nativeDpr = window.devicePixelRatio || 1;
+                    const outputScale = Math.min(nativeDpr, 1.5);
+                    
+                    // Single shared buffer canvas to prevent iOS RAM crashes
+                    const renderCanvas = document.createElement('canvas');
+                    const renderCtx = renderCanvas.getContext('2d');
+
+                    // First pass: render page 1 to get dims and build wrappers instantly
+                    const firstPage = await pdf.getPage(1);
+                    const viewport1 = firstPage.getViewport({scale: baseScale});
+                    const cssWidth = viewport1.width;
+                    const cssHeight = viewport1.height;
 
                     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
                         const container = document.createElement('div');
@@ -301,10 +290,57 @@
                         container.style.height = cssHeight + "px";
                         container.style.maxWidth = "100%";
                         document.getElementById('pdf-container').appendChild(container);
-                        pageObserver.observe(container);
-                        viewObserver.observe(container);
+                        viewObserver.observe(container); // For page counter
                     }
-                });
+
+                    // Second pass: render all sequentially
+                    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                        const container = document.querySelector(`.page-container[data-page="${pageNum}"]`);
+                        const page = await pdf.getPage(pageNum);
+                        const viewport = page.getViewport({scale: baseScale});
+
+                        renderCanvas.width = Math.floor(viewport.width * outputScale);
+                        renderCanvas.height = Math.floor(viewport.height * outputScale);
+                        const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
+
+                        await page.render({
+                            canvasContext: renderCtx,
+                            transform: transform,
+                            viewport: viewport
+                        }).promise;
+
+                        // Base PDF Image (Hardware memory safe)
+                        const pdfImg = document.createElement('img');
+                        pdfImg.src = renderCanvas.toDataURL('image/jpeg', 0.85);
+                        pdfImg.style.width = "100%";
+                        pdfImg.style.display = "block";
+                        
+                        // Drawing Overlay Image
+                        const overlayImg = document.createElement('img');
+                        overlayImg.className = 'page-overlay';
+                        overlayImg.style.width = "100%";
+                        overlayImg.style.height = "100%";
+                        
+                        const storageKey = `annotation_${user}_${fileName}_p${pageNum}`;
+                        const savedData = localStorage.getItem(storageKey);
+                        if (savedData) overlayImg.src = savedData;
+
+                        container.appendChild(pdfImg);
+                        container.appendChild(overlayImg);
+
+                        // Attach On-Demand Drawing Logic to the overlay wrapper
+                        setupOnDemandDrawing(container, overlayImg, viewport, outputScale, storageKey);
+
+                        // Give breath space for main thread to maintain smooth UI scroll during processing
+                        await new Promise(r => setTimeout(r, 15));
+                    }
+                    
+                    // Destruct shared canvas instantly to force iOS garbage collection
+                    renderCanvas.width = 0;
+                    renderCanvas.height = 0;
+                };
+
+                processAllPages();
 
             }, function (reason) {
                 console.error(reason);
@@ -315,131 +351,101 @@
                 }
             });
             
-            function renderPageContent(pdf, pageNum, container) {
-                pdf.getPage(pageNum).then(function(page) {
-                    // Always render at high quality base scale regardless of screen
-                    const baseScale = 1.5;
-                    const viewport = page.getViewport({scale: baseScale});
+            // On-Demand Engine: Only allocates powerful HTML5 Canvas blocks WHILE your finger touches the screen!
+            function setupOnDemandDrawing(container, overlayImg, viewport, outputScale, storageKey) {
+                let activeCanvas = null;
+                let activeCtx = null;
+                let isDrawing = false;
+                let lastX = 0, lastY = 0;
 
-                    // Retina / High-DPI handling with strict memory limit for iOS crash prevention
-                    const nativeDpr = window.devicePixelRatio || 1;
-                    const outputScale = Math.min(nativeDpr, 1.5);
+                function getPos(e) {
+                    const rect = activeCanvas.getBoundingClientRect();
+                    const scaleX = rect.width / activeCanvas.offsetWidth;
+                    const scaleY = rect.height / activeCanvas.offsetHeight;
+                    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                    return { x: (clientX - rect.left) / scaleX, y: (clientY - rect.top) / scaleY };
+                }
 
-                    // Update exact dimensions
-                    container.style.width = viewport.width + "px";
-                    container.style.height = viewport.height + "px";
+                function startDraw(e) {
+                    if (!isDrawMode) return;
+                    e.preventDefault();
                     
-                    // Base PDF Canvas
-                    const canvas = document.createElement('canvas');
-                    const context = canvas.getContext('2d');
+                    // Awaken heavy hardware canvas just for drawing context
+                    activeCanvas = document.createElement('canvas');
+                    activeCanvas.className = 'page-overlay';
+                    activeCanvas.width = Math.floor(viewport.width * outputScale);
+                    activeCanvas.height = Math.floor(viewport.height * outputScale);
+                    activeCanvas.style.width = viewport.width + "px";
+                    activeCanvas.style.height = viewport.height + "px";
                     
-                    canvas.width = Math.floor(viewport.width * outputScale);
-                    canvas.height = Math.floor(viewport.height * outputScale);
-                    canvas.style.width = viewport.width + "px";
-                    canvas.style.height = viewport.height + "px";
+                    activeCtx = activeCanvas.getContext('2d');
+                    if (outputScale !== 1) activeCtx.scale(outputScale, outputScale);
 
-                    const transform = outputScale !== 1 
-                        ? [outputScale, 0, 0, outputScale, 0, 0] 
-                        : null;
+                    // Pre-paint existing drawing back onto the working canvas buffer
+                    if (overlayImg.src && overlayImg.src.startsWith('data:')) {
+                        activeCtx.drawImage(overlayImg, 0, 0, viewport.width, viewport.height);
+                    }
 
-                    // Drawing Overlay Canvas
-                    const overlay = document.createElement('canvas');
-                    overlay.className = 'page-overlay';
-                    overlay.width = canvas.width;
-                    overlay.height = canvas.height;
-                    overlay.style.width = viewport.width + "px";
-                    overlay.style.height = viewport.height + "px";
+                    // Mask image, replace with powerful canvas briefly
+                    overlayImg.style.display = 'none';
+                    container.appendChild(activeCanvas);
+
+                    isDrawing = true;
+                    const pos = getPos(e);
+                    lastX = pos.x; lastY = pos.y;
+                }
+
+                function draw(e) {
+                    if (!isDrawing || !isDrawMode || !activeCtx) return;
+                    e.preventDefault();
+                    const pos = getPos(e);
+
+                    activeCtx.lineCap = 'round';
+                    activeCtx.lineJoin = 'round';
+
+                    if (isEraserMode) {
+                        activeCtx.globalCompositeOperation = 'destination-out';
+                        activeCtx.lineWidth = 20; 
+                    } else {
+                        activeCtx.globalCompositeOperation = 'source-over';
+                        activeCtx.lineWidth = 3;
+                        activeCtx.strokeStyle = drawColorInput.value;
+                    }
+
+                    activeCtx.beginPath();
+                    activeCtx.moveTo(lastX, lastY);
+                    activeCtx.lineTo(pos.x, pos.y);
+                    activeCtx.stroke();
                     
-                    const overlayCtx = overlay.getContext('2d');
-                    if (outputScale !== 1) overlayCtx.scale(outputScale, outputScale);
+                    lastX = pos.x; lastY = pos.y;
+                }
 
-                    // Load saved drawing
-                    const storageKey = `annotation_${user}_${fileName}_p${pageNum}`;
-                    const savedData = localStorage.getItem(storageKey);
-                    if (savedData) {
-                        const img = new Image();
-                        img.onload = () => { overlayCtx.drawImage(img, 0, 0, viewport.width, viewport.height); };
-                        img.src = savedData;
-                    }
+                function endDraw() {
+                    if (!isDrawing) return;
+                    isDrawing = false;
+                    
+                    // Compress and freeze canvas back to pure memory-safe image data string
+                    const dataUrl = activeCanvas.toDataURL('image/png');
+                    localStorage.setItem(storageKey, dataUrl);
+                    overlayImg.src = dataUrl;
+                    overlayImg.style.display = 'block';
 
-                    // Touch / Mouse Drawing Logic
-                    let isDrawing = false;
-                    let lastX = 0;
-                    let lastY = 0;
+                    // CRITICAL FOR IOS: Nuke the active working canvas dimensions to release GPU locks
+                    activeCanvas.width = 0; 
+                    activeCanvas.height = 0;
+                    activeCanvas.remove();
+                    activeCanvas = null;
+                    activeCtx = null;
+                }
 
-                    function getPos(e) {
-                        const rect = overlay.getBoundingClientRect();
-                        // Adjust coordinates based on the current CSS transform zoom
-                        const scaleX = rect.width / overlay.offsetWidth;
-                        const scaleY = rect.height / overlay.offsetHeight;
+                container.addEventListener('mousedown', startDraw);
+                container.addEventListener('mousemove', draw);
+                window.addEventListener('mouseup', endDraw);
 
-                        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-                        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-
-                        return {
-                            x: (clientX - rect.left) / scaleX,
-                            y: (clientY - rect.top) / scaleY
-                        };
-                    }
-
-                    function startDraw(e) {
-                        if (!isDrawMode) return;
-                        e.preventDefault();
-                        isDrawing = true;
-                        const pos = getPos(e);
-                        lastX = pos.x;
-                        lastY = pos.y;
-                    }
-
-                    function draw(e) {
-                        if (!isDrawing || !isDrawMode) return;
-                        e.preventDefault();
-                        const pos = getPos(e);
-
-                        overlayCtx.lineCap = 'round';
-                        overlayCtx.lineJoin = 'round';
-
-                        if (isEraserMode) {
-                            overlayCtx.globalCompositeOperation = 'destination-out';
-                            overlayCtx.lineWidth = 20; // Larger eraser
-                        } else {
-                            overlayCtx.globalCompositeOperation = 'source-over';
-                            overlayCtx.lineWidth = 3;
-                            overlayCtx.strokeStyle = drawColorInput.value;
-                        }
-
-                        overlayCtx.beginPath();
-                        overlayCtx.moveTo(lastX, lastY);
-                        overlayCtx.lineTo(pos.x, pos.y);
-                        overlayCtx.stroke();
-                        
-                        lastX = pos.x;
-                        lastY = pos.y;
-                    }
-
-                    function endDraw() {
-                        if (!isDrawing) return;
-                        isDrawing = false;
-                        localStorage.setItem(storageKey, overlay.toDataURL());
-                    }
-
-                    overlay.addEventListener('mousedown', startDraw);
-                    overlay.addEventListener('mousemove', draw);
-                    window.addEventListener('mouseup', endDraw);
-
-                    overlay.addEventListener('touchstart', startDraw, {passive: false});
-                    overlay.addEventListener('touchmove', draw, {passive: false});
-                    window.addEventListener('touchend', endDraw);
-
-                    container.appendChild(canvas);
-                    container.appendChild(overlay);
-                    const renderContext = {
-                        canvasContext: context,
-                        transform: transform,
-                        viewport: viewport
-                    };
-                    page.render(renderContext);
-                });
+                container.addEventListener('touchstart', startDraw, {passive: false});
+                container.addEventListener('touchmove', draw, {passive: false});
+                window.addEventListener('touchend', endDraw);
             }
         }
     </script>

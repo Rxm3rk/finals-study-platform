@@ -346,6 +346,34 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    if (req.method === 'DELETE' && pathname === '/api/admin/user') {
+        const pwd = parsedUrl.searchParams.get('pwd');
+        const adminPassword = process.env.ADMIN_PASSWORD || 'rxm3rk_admin';
+        if (pwd !== adminPassword) {
+            res.writeHead(401);
+            return res.end('Unauthorized');
+        }
+        let body = '';
+        req.on('data', chunk => body += chunk.toString());
+        req.on('end', () => {
+            try {
+                const data = JSON.parse(body);
+                if (data.username) {
+                    let users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+                    const filteredUsers = users.filter(u => u.username !== data.username);
+                    fs.writeFileSync(USERS_FILE, JSON.stringify(filteredUsers, null, 2));
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ success: true }));
+                } else {
+                    res.writeHead(400); res.end('Bad Request');
+                }
+            } catch(e) {
+                res.writeHead(500); res.end();
+            }
+        });
+        return;
+    }
+
     if (req.method === 'GET' && pathname === '/api/document') {
         const file = parsedUrl.searchParams.get('file');
         const user = parsedUrl.searchParams.get('user');

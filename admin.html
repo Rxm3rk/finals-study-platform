@@ -217,7 +217,10 @@
                                 <br><span style="font-size:0.8rem; color:#555;">last seen: ${seenText}</span>
                                 ${isBlocked ? '<span class="blocked-badge" style="margin-left: 5px;">BANNED</span>' : ''}
                             </div>
-                            ${btn}
+                            <div>
+                                ${btn}
+                                <button onclick="deleteUser('${u.username}')" style="padding:4px 8px; font-size:0.75rem; background:#333; border-radius:4px; margin-left:4px;">Delete User</button>
+                            </div>
                         </div>`;
                     }).join('');
                 } else {
@@ -320,6 +323,25 @@
                 }
             } catch(e) {
                 alert("Error unbanning.");
+            }
+        }
+
+        async function deleteUser(username) {
+            if (!confirm(`Are you sure you want to PERMANENTLY delete user "${username}"?\n\nThey will be removed from the system completely.`)) return;
+            const pwd = document.getElementById('pwd').value;
+            try {
+                const res = await fetch(`/api/admin/user?pwd=${encodeURIComponent(pwd)}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username })
+                });
+                if (res.ok) {
+                    loadData();
+                } else {
+                    alert("Failed to delete user.");
+                }
+            } catch(e) {
+                alert("Error deleting user.");
             }
         }
     </script>

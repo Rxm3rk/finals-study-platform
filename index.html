@@ -178,9 +178,11 @@
 
         .modal {
             background: var(--bg);
-            padding: 3rem;
+            padding: 2.5rem;
             max-width: 440px;
             width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
             box-shadow: 0 20px 60px rgba(0,0,0,0.08); /* Minimal, elegant shadow */
             border: 1px solid rgba(0,0,0,0.06);
             border-radius: 16px;
@@ -423,9 +425,21 @@
         }
 
         window.onload = () => {
-            if (localStorage.getItem('saved_username')) {
-                document.getElementById('username').value = localStorage.getItem('saved_username');
-                document.getElementById('password').value = localStorage.getItem('saved_password');
+            const savedU = localStorage.getItem('saved_username');
+            const savedP = localStorage.getItem('saved_password');
+            if (savedU && savedP) {
+                document.getElementById('username').value = savedU;
+                document.getElementById('password').value = savedP;
+
+                // Compress the dialog for returning active sessions 
+                document.getElementById('username').parentElement.style.display = 'none';
+                document.getElementById('password').parentElement.style.display = 'none';
+                document.getElementById('tabLogin').parentElement.style.display = 'none';
+
+                const p = document.createElement('p');
+                p.style = "font-weight: 600; font-size:1.15rem; margin-bottom: 1.5rem; color: #111;";
+                p.innerText = `Welcome back, ${savedU}!`;
+                document.getElementById('accessForm').prepend(p);
             }
         };
 
@@ -463,7 +477,7 @@
                     
                     const data = await res.json();
                     if (!data.success) {
-                        alert(data.error || 'Invalid credentials');
+                        alert('Error: Account not found or wrong password.');
                         btn.innerText = originalText; btn.disabled = false; return;
                     }
 

@@ -153,8 +153,8 @@
                 <div id="online-list" style="display:flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;">Loading...</div>
             </div>
             <div style="flex: 1; min-width: 250px;">
-                <h3>Blocked Users</h3>
-                <div id="blocked-list" style="margin-top: 10px;">Loading...</div>
+                <h3>Registered Users</h3>
+                <div id="users-list" style="margin-top: 10px; font-size: 0.9rem; color: #555;">Loading...</div>
             </div>
         </div>
 
@@ -195,12 +195,20 @@
                 document.getElementById('login-section').style.display = 'none';
                 document.getElementById('dashboard').style.display = 'block';
 
-                // Render Blocked Users
-                const blockedList = document.getElementById('blocked-list');
-                if (data.blocked && data.blocked.length > 0) {
-                    blockedList.innerHTML = data.blocked.map(u => `<span class="blocked-badge">${u}</span>`).join(' ');
+                // Render Registered Users and Offline Tracker
+                const usersList = document.getElementById('users-list');
+                if (data.users && data.users.length > 0) {
+                    usersList.innerHTML = data.users.map(u => {
+                        const mins = Math.floor((Date.now() - u.lastOnline) / 60000);
+                        let seenText = `${mins} min ago`;
+                        if (mins < 1) seenText = 'Just now';
+                        else if (mins > 1440) seenText = `${Math.floor(mins / 1440)} days ago`;
+                        else if (mins > 60) seenText = `${Math.floor(mins / 60)} hrs ago`;
+                        
+                        return `<div style="margin-bottom: 6px;"><strong style="color:#222;">${u.username}</strong> &mdash; last seen: ${seenText}</div>`;
+                    }).join('');
                 } else {
-                    blockedList.innerHTML = "<span style='color: #666;'>No users blocked.</span>";
+                    usersList.innerHTML = "No users found.";
                 }
 
                 // Render Live Online Users Matrix (60 seconds buffer)

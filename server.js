@@ -77,7 +77,7 @@ const server = http.createServer((req, res) => {
             const blockedList = JSON.parse(fs.readFileSync(BLOCKED_FILE, 'utf8'));
             if (clientIp && blockedList.includes(clientIp)) {
                 res.writeHead(403);
-                return res.end('Access Denied: Your IP is banned.');
+                return res.end("You're banned from getting access to the Question Bank.");
             }
         } catch(e) {}
 
@@ -359,7 +359,7 @@ const server = http.createServer((req, res) => {
             const blockedUsers = JSON.parse(fs.readFileSync(BLOCKED_FILE, 'utf8'));
             if (blockedUsers.includes(user)) {
                 res.writeHead(403);
-                return res.end('Access Denied: User is blocked.');
+                return res.end("You're banned from getting access to the Question Bank.");
             }
         } catch(e) {
             console.error('Blocked JSON parse error:', e);

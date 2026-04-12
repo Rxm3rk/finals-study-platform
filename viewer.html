@@ -289,8 +289,31 @@
                         container.style.width = cssWidth + "px";
                         container.style.height = cssHeight + "px";
                         container.style.maxWidth = "100%";
+                        
+                        // Base PDF Image (Hardware memory safe)
+                        const pdfImg = document.createElement('img');
+                        pdfImg.className = 'pdf-base-img';
+                        pdfImg.style.width = "100%";
+                        pdfImg.style.display = "block";
+                        
+                        // Drawing Overlay Image
+                        const overlayImg = document.createElement('img');
+                        overlayImg.className = 'page-overlay';
+                        overlayImg.style.width = "100%";
+                        overlayImg.style.height = "100%";
+                        
+                        const storageKey = `annotation_${user}_${fileName}_p${pageNum}`;
+                        const savedData = localStorage.getItem(storageKey);
+                        if (savedData) overlayImg.src = savedData;
+
+                        container.appendChild(pdfImg);
+                        container.appendChild(overlayImg);
+
                         document.getElementById('pdf-container').appendChild(container);
                         viewObserver.observe(container); // For page counter
+
+                        // Attach drawing mechanism immediately even before PDF renders
+                        setupOnDemandDrawing(container, overlayImg, viewport1, outputScale, storageKey);
                     }
 
                     // Second pass: render all sequentially
@@ -309,27 +332,8 @@
                             viewport: viewport
                         }).promise;
 
-                        // Base PDF Image (Hardware memory safe)
-                        const pdfImg = document.createElement('img');
-                        pdfImg.src = renderCanvas.toDataURL('image/jpeg', 0.85);
-                        pdfImg.style.width = "100%";
-                        pdfImg.style.display = "block";
-                        
-                        // Drawing Overlay Image
-                        const overlayImg = document.createElement('img');
-                        overlayImg.className = 'page-overlay';
-                        overlayImg.style.width = "100%";
-                        overlayImg.style.height = "100%";
-                        
-                        const storageKey = `annotation_${user}_${fileName}_p${pageNum}`;
-                        const savedData = localStorage.getItem(storageKey);
-                        if (savedData) overlayImg.src = savedData;
-
-                        container.appendChild(pdfImg);
-                        container.appendChild(overlayImg);
-
-                        // Attach On-Demand Drawing Logic to the overlay wrapper
-                        setupOnDemandDrawing(container, overlayImg, viewport, outputScale, storageKey);
+                        const pdfImg = container.querySelector('.pdf-base-img');
+                        if(pdfImg) pdfImg.src = renderCanvas.toDataURL('image/jpeg', 0.85);
 
                         // Give breath space for main thread to maintain smooth UI scroll during processing
                         await new Promise(r => setTimeout(r, 15));
@@ -390,6 +394,9 @@
                     // Mask image, replace with powerful canvas briefly
                     overlayImg.style.display = 'none';
                     container.appendChild(activeCanvas);
+
+                    // Force browser reflow so width/height are calculated instantly for coordinate scaling
+                    activeCanvas.offsetHeight; 
 
                     isDrawing = true;
                     const pos = getPos(e);

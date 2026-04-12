@@ -205,7 +205,20 @@
                         else if (mins > 1440) seenText = `${Math.floor(mins / 1440)} days ago`;
                         else if (mins > 60) seenText = `${Math.floor(mins / 60)} hrs ago`;
                         
-                        return `<div style="margin-bottom: 6px;"><strong style="color:#222;">${u.username}</strong> &mdash; last seen: ${seenText}</div>`;
+                        const isBlocked = data.blocked && (data.blocked.includes(u.ip) || data.blocked.includes(u.username));
+                        const btn = isBlocked ? 
+                            `<button onclick="unban('${u.username}')" style="padding:4px 8px; font-size:0.75rem; background:#6c757d; border-radius:4px;">Unban</button>` :
+                            `<button onclick="banUser('${u.username}')" style="padding:4px 8px; font-size:0.75rem; background:#dc3545; border-radius:4px;">Ban IP</button>`;
+
+                        return `<div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center; background:#fbfbfb; padding:8px; border-radius:6px; border:1px solid #eee;">
+                            <div>
+                                <strong style="color:#222;">${u.username}</strong>
+                                <span style="font-size:0.75rem; color:#888;">(${u.ip || 'No IP'})</span>
+                                <br><span style="font-size:0.8rem; color:#555;">last seen: ${seenText}</span>
+                                ${isBlocked ? '<span class="blocked-badge" style="margin-left: 5px;">BANNED</span>' : ''}
+                            </div>
+                            ${btn}
+                        </div>`;
                     }).join('');
                 } else {
                     usersList.innerHTML = "No users found.";
@@ -269,6 +282,44 @@
                 }
             } catch(e) {
                 alert("Error deleting log.");
+            }
+        }
+
+        async function banUser(username) {
+            if (!confirm(`Are you sure you want to IP ban ${username} forever?`)) return;
+            const pwd = document.getElementById('pwd').value;
+            try {
+                const res = await fetch(`/api/admin/ban?pwd=${encodeURIComponent(pwd)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username })
+                });
+                if (res.ok) {
+                    loadData();
+                } else {
+                    alert("Failed to ban the user.");
+                }
+            } catch(e) {
+                alert("Error banning user.");
+            }
+        }
+
+        async function unban(identifier) {
+            if (!confirm(`Are you sure you want to unban ${identifier}?`)) return;
+            const pwd = document.getElementById('pwd').value;
+            try {
+                const res = await fetch(`/api/admin/ban?pwd=${encodeURIComponent(pwd)}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ identifier })
+                });
+                if (res.ok) {
+                    loadData();
+                } else {
+                    alert("Failed to unban.");
+                }
+            } catch(e) {
+                alert("Error unbanning.");
             }
         }
     </script>

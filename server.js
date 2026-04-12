@@ -72,6 +72,15 @@ const server = http.createServer((req, res) => {
         const parsedUrl = new URL(req.url, `http://${host}`);
         let pathname = parsedUrl.pathname;
 
+        const clientIp = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress;
+        try {
+            const blockedList = JSON.parse(fs.readFileSync(BLOCKED_FILE, 'utf8'));
+            if (clientIp && blockedList.includes(clientIp)) {
+                res.writeHead(403);
+                return res.end('Access Denied: Your IP is banned.');
+            }
+        } catch(e) {}
+
 
     if (pathname === '/health') {
         res.writeHead(200);
@@ -84,6 +93,11 @@ const server = http.createServer((req, res) => {
         req.on('end', () => {
             try {
                 const data = JSON.parse(body);
+                const blockedList = JSON.parse(fs.readFileSync(BLOCKED_FILE, 'utf8'));
+                if (blockedList.includes(data.username)) {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'Banned' }));
+                }
                 const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
                 if (users.find(u => u.username === data.username)) {
                     res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -93,7 +107,8 @@ const server = http.createServer((req, res) => {
                     username: data.username,
                     password: data.password, // Simple persistence
                     createdAt: new Date().toISOString(),
-                    lastOnline: Date.now()
+                    lastOnline: Date.now(),
+                    ip: clientIp
                 });
                 fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
                 res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -111,6 +126,11 @@ const server = http.createServer((req, res) => {
         req.on('end', () => {
             try {
                 const data = JSON.parse(body);
+                const blockedList = JSON.parse(fs.readFileSync(BLOCKED_FILE, 'utf8'));
+                if (blockedList.includes(data.username)) {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'Banned' }));
+                }
                 const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
                 const user = users.find(u => u.username === data.username && u.password === data.password);
                 
@@ -120,6 +140,7 @@ const server = http.createServer((req, res) => {
                 }
                 
                 user.lastOnline = Date.now();
+                user.ip = clientIp;
                 fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
 
                 if (pathname === '/api/login') {
@@ -250,6 +271,78 @@ const server = http.createServer((req, res) => {
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Database write error' }));
         }
+        return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/admin/ban') {
+        const pwd = parsedUrl.searchParams.get('pwd');
+        const adminPassword = process.env.ADMIN_PASSWORD || 'rxm3rk_admin';
+        if (pwd !== adminPassword) {
+            res.writeHead(401);
+            return res.end('Unauthorized');
+        }
+        let body = '';
+        req.on('data', chunk => body += chunk.toString());
+        req.on('end', () => {
+            try {
+                const data = JSON.parse(body);
+                let blocked = JSON.parse(fs.readFileSync(BLOCKED_FILE, 'utf8'));
+                let updated = false;
+
+                if (data.username) {
+                    const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+                    const u = users.find(usr => usr.username === data.username);
+                    if (u && u.ip && !blocked.includes(u.ip)) {
+                        blocked.push(u.ip);
+                        updated = true;
+                    }
+                    if (!blocked.includes(data.username)) {
+                        blocked.push(data.username);
+                        updated = true;
+                    }
+                }
+
+                if (updated) {
+                    fs.writeFileSync(BLOCKED_FILE, JSON.stringify(blocked, null, 2));
+                }
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+            } catch(e) {
+                res.writeHead(500); res.end();
+            }
+        });
+        return;
+    }
+
+    if (req.method === 'DELETE' && pathname === '/api/admin/ban') {
+        const pwd = parsedUrl.searchParams.get('pwd');
+        const adminPassword = process.env.ADMIN_PASSWORD || 'rxm3rk_admin';
+        if (pwd !== adminPassword) {
+            res.writeHead(401);
+            return res.end('Unauthorized');
+        }
+        let body = '';
+        req.on('data', chunk => body += chunk.toString());
+        req.on('end', () => {
+            try {
+                const data = JSON.parse(body);
+                let blocked = JSON.parse(fs.readFileSync(BLOCKED_FILE, 'utf8'));
+                if (data.identifier) {
+                    blocked = blocked.filter(b => b !== data.identifier);
+                    // if it was a username, also unban their associated IP
+                    const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+                    const u = users.find(usr => usr.username === data.identifier);
+                    if (u && u.ip) {
+                        blocked = blocked.filter(b => b !== u.ip);
+                    }
+                    fs.writeFileSync(BLOCKED_FILE, JSON.stringify(blocked, null, 2));
+                }
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+            } catch(e) {
+                res.writeHead(500); res.end();
+            }
+        });
         return;
     }
 

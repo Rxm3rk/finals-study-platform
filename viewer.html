@@ -164,6 +164,7 @@
         const urlParams = new URLSearchParams(window.location.search);
         const fileName = urlParams.get('file');
         const user = urlParams.get('user');
+        const pwd = urlParams.get('pwd');
 
         // Zoom state
         let globalZoom = 1.0;
@@ -239,8 +240,24 @@
             let viewObserver;
 
             const loadingTask = pdfjsLib.getDocument(pdfUrl);
-            loadingTask.promise.then(function(pdf) {
+            loadingTask.promise.then(async function(pdf) {
                 document.getElementById('loader').style.display = 'none';
+
+                // Fetch full Cloud Annotations object for this document
+                let serverAnnotations = {};
+                try {
+                    const annRes = await fetch(`/api/annotations?file=${encodeURIComponent(fileName)}&user=${encodeURIComponent(user)}&pwd=${encodeURIComponent(pwd)}`);
+                    if (annRes.ok) serverAnnotations = await annRes.json();
+                } catch(e) { console.error('Cloud load fail', e); }
+
+                // Heartbeat to keep user "Online" on admin dashboard
+                setInterval(() => {
+                    fetch('/api/heartbeat', {
+                        method: 'POST',
+                        headers: {'Content-Type':'application/json'},
+                        body: JSON.stringify({username: user, password: pwd})
+                    }).catch(()=>{});
+                }, 20000);
 
                 const pageInput = document.getElementById('pageNumberInput');
                 const totalPagesLabel = document.getElementById('totalPagesLabel');
@@ -302,8 +319,21 @@
                         overlayImg.style.width = "100%";
                         overlayImg.style.height = "100%";
                         
-                        const storageKey = `annotation_${user}_${fileName}_p${pageNum}`;
-                        const savedData = localStorage.getItem(storageKey);
+                        // Favor Cloud Annotations, fallback to legacy local ones
+                        let savedData = serverAnnotations[pageNum];
+                        const oldStorageKey = `annotation_${user}_${fileName}_p${pageNum}`;
+                        if (!savedData) {
+                            savedData = localStorage.getItem(oldStorageKey);
+                            if (savedData) {
+                                // Auto-migrate local sync to the cloud
+                                fetch('/api/annotations', {
+                                    method: 'POST',
+                                    headers: {'Content-Type': 'application/json'},
+                                    body: JSON.stringify({ user, pwd, file: fileName, page: pageNum, dataUrl: savedData })
+                                }).catch(()=>{});
+                            }
+                        }
+                        
                         if (savedData) overlayImg.src = savedData;
 
                         container.appendChild(pdfImg);
@@ -313,7 +343,7 @@
                         viewObserver.observe(container); // For page counter
 
                         // Attach drawing mechanism immediately even before PDF renders
-                        setupOnDemandDrawing(container, overlayImg, viewport1, outputScale, storageKey);
+                        setupOnDemandDrawing(container, overlayImg, viewport1, outputScale, pageNum);
                     }
 
                     // Second pass: render all sequentially
@@ -355,8 +385,7 @@
                 }
             });
             
-            // On-Demand Engine: Only allocates powerful HTML5 Canvas blocks WHILE your finger touches the screen!
-            function setupOnDemandDrawing(container, overlayImg, viewport, outputScale, storageKey) {
+            function setupOnDemandDrawing(container, overlayImg, viewport, outputScale, pageNum) {
                 let activeCanvas = null;
                 let activeCtx = null;
                 let isDrawing = false;
@@ -434,9 +463,21 @@
                     
                     // Compress and freeze canvas back to pure memory-safe image data string
                     const dataUrl = activeCanvas.toDataURL('image/png');
-                    localStorage.setItem(storageKey, dataUrl);
                     overlayImg.src = dataUrl;
                     overlayImg.style.display = 'block';
+
+                    // Push heavily to Cloud instantly
+                    fetch('/api/annotations', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            user: user,
+                            pwd: pwd,
+                            file: fileName,
+                            page: pageNum,
+                            dataUrl: dataUrl
+                        })
+                    }).catch(e => console.error("Cloud push failed"));
 
                     // CRITICAL FOR IOS: Nuke the active working canvas dimensions to release GPU locks
                     activeCanvas.width = 0; 

@@ -357,9 +357,19 @@
             </p>
 
             <form id="accessForm" onsubmit="handleFormSubmit(event)">
+                <div style="display: flex; gap: 10px; margin-bottom: 1.5rem;">
+                    <button type="button" id="tabLogin" class="btn" style="flex:1; background: #000; color: #fff;" onclick="setMode('login')">Login</button>
+                    <button type="button" id="tabRegister" class="btn" style="flex:1; background: #eee; color: #000;" onclick="setMode('register')">Create Account</button>
+                </div>
+
                 <div class="form-group">
-                    <label class="form-label" for="username">Your C3 Username</label>
-                    <input type="text" id="username" class="form-input" placeholder="Required for access" required>
+                    <label class="form-label" for="username">Username</label>
+                    <input type="text" id="username" class="form-input" placeholder="Required" required>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="password">Password</label>
+                    <input type="password" id="password" class="form-input" placeholder="Required" required>
                 </div>
 
                 <div class="form-group">
@@ -402,30 +412,73 @@
             document.body.style.overflow = '';
         }
 
+        let isRegisterMode = false;
+        function setMode(mode) {
+            isRegisterMode = mode === 'register';
+            document.getElementById('tabLogin').style.background = isRegisterMode ? '#f5f5f5' : '#000';
+            document.getElementById('tabLogin').style.color = isRegisterMode ? '#000' : '#fff';
+            document.getElementById('tabRegister').style.background = isRegisterMode ? '#000' : '#f5f5f5';
+            document.getElementById('tabRegister').style.color = isRegisterMode ? '#fff' : '#000';
+            document.querySelector('.btn-full').innerText = isRegisterMode ? 'Create Account & Access' : 'Login & Access';
+        }
+
+        window.onload = () => {
+            if (localStorage.getItem('saved_username')) {
+                document.getElementById('username').value = localStorage.getItem('saved_username');
+                document.getElementById('password').value = localStorage.getItem('saved_password');
+            }
+        };
+
         async function handleFormSubmit(e) {
             e.preventDefault();
             const username = usernameInput.value.trim();
+            const password = document.getElementById('password').value.trim();
             const pdfVersion = document.querySelector('input[name="pdfVersion"]:checked').value;
             
-            if (username) {
+            if (username && password) {
                 const btn = document.querySelector('.btn-full');
                 const originalText = btn.innerText;
                 btn.innerText = 'Verifying...';
                 btn.disabled = true;
 
                 try {
-                    await fetch('/api/login', {
+                    if (isRegisterMode) {
+                        const regRes = await fetch('/api/register', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ username, password })
+                        });
+                        const regData = await regRes.json();
+                        if (!regData.success) {
+                            alert(regData.error || 'Registration failed');
+                            btn.innerText = originalText; btn.disabled = false; return;
+                        }
+                    }
+
+                    const res = await fetch('/api/login', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ username, pdfVersion })
+                        body: JSON.stringify({ username, password, pdfVersion })
                     });
+                    
+                    const data = await res.json();
+                    if (!data.success) {
+                        alert(data.error || 'Invalid credentials');
+                        btn.innerText = originalText; btn.disabled = false; return;
+                    }
+
+                    localStorage.setItem('saved_username', username);
+                    localStorage.setItem('saved_password', password);
+
                 } catch(e) {
                     console.error("Failed to log:", e);
+                    alert("Network error connecting to server.");
+                    btn.innerText = originalText; btn.disabled = false; return;
                 }
 
                 btn.innerText = originalText;
                 btn.disabled = false;
-                window.location.href = 'viewer.html?file=' + encodeURIComponent(pdfVersion) + '&user=' + encodeURIComponent(username);
+                window.location.href = 'viewer.html?file=' + encodeURIComponent(pdfVersion) + '&user=' + encodeURIComponent(username) + '&pwd=' + encodeURIComponent(password);
                 closeModal();
             }
         }

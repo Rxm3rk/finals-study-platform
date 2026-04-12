@@ -102,6 +102,33 @@
             margin-top: 10px;
             font-size: 0.9rem;
         }
+
+        .online-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #28a745;
+            border-radius: 50%;
+            margin-right: 6px;
+            animation: pulse-dot 2s infinite;
+        }
+
+        @keyframes pulse-dot {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.85); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        .online-badge {
+            background: #e8f5e9;
+            color: #1b5e20;
+            padding: 5px 12px;
+            border-radius: 99px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+        }
     </style>
 </head>
 <body>
@@ -120,8 +147,17 @@
             <button onclick="location.reload()" style="background: #efefef; color: #000;">Refresh Data</button>
         </div>
 
-        <h3>Blocked Users List</h3>
-        <p id="blocked-list" style="color: #d10000; font-weight: 500;">Loading...</p>
+        <div style="display: flex; gap: 2rem; margin-bottom: 2rem; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 250px;">
+                <h3>Currently Online</h3>
+                <div id="online-list" style="display:flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;">Loading...</div>
+            </div>
+            <div style="flex: 1; min-width: 250px;">
+                <h3>Blocked Users</h3>
+                <div id="blocked-list" style="margin-top: 10px;">Loading...</div>
+            </div>
+        </div>
+
         <hr style="border: none; border-top: 1px solid #eee; margin: 2rem 0;">
 
         <h3>Access History</h3>
@@ -164,7 +200,21 @@
                 if (data.blocked && data.blocked.length > 0) {
                     blockedList.innerHTML = data.blocked.map(u => `<span class="blocked-badge">${u}</span>`).join(' ');
                 } else {
-                    blockedList.innerHTML = "<span style='color: #666;'>No users currently blocked.</span>";
+                    blockedList.innerHTML = "<span style='color: #666;'>No users blocked.</span>";
+                }
+
+                // Render Live Online Users Matrix (60 seconds buffer)
+                const onlineList = document.getElementById('online-list');
+                if (data.users && data.users.length > 0) {
+                    const now = Date.now();
+                    const onlineUsers = data.users.filter(u => (now - u.lastOnline) < 60000);
+                    if (onlineUsers.length > 0) {
+                        onlineList.innerHTML = onlineUsers.map(u => `<span class="online-badge"><span class="online-dot"></span>${u.username}</span>`).join('');
+                    } else {
+                        onlineList.innerHTML = "<span style='color: #888;'>Nobody is currently active.</span>";
+                    }
+                } else {
+                    onlineList.innerHTML = "<span style='color: #888;'>No registered users yet.</span>";
                 }
 
                 // Render DB Logs

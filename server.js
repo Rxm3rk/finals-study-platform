@@ -35,8 +35,19 @@ if (!fs.existsSync(BLOCKED_FILE)) {
     if (fs.existsSync(localBlockedPath) && IS_PROD_VOL) {
         fs.copyFileSync(localBlockedPath, BLOCKED_FILE);
     } else {
+    } else {
         fs.writeFileSync(BLOCKED_FILE, JSON.stringify([], null, 2));
     }
+}
+
+const USERS_FILE = path.join(WORK_DIR, 'users.json');
+const ANNOTATIONS_DIR = path.join(WORK_DIR, 'annotations');
+
+if (!fs.existsSync(USERS_FILE)) {
+    fs.writeFileSync(USERS_FILE, JSON.stringify([], null, 2));
+}
+if (!fs.existsSync(ANNOTATIONS_DIR)) {
+    fs.mkdirSync(ANNOTATIONS_DIR, { recursive: true });
 }
 
 console.log(`[INFO] Startup: Node ${process.version}`);
@@ -68,29 +79,119 @@ const server = http.createServer((req, res) => {
         return res.end('OK');
     }
 
-    if (req.method === 'POST' && pathname === '/api/login') {
+    if (req.method === 'POST' && pathname === '/api/register') {
         let body = '';
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
+        req.on('data', chunk => body += chunk.toString());
         req.on('end', () => {
             try {
                 const data = JSON.parse(body);
-                const dbData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-                
-                dbData.push({
+                const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+                if (users.find(u => u.username === data.username)) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'Username already exists' }));
+                }
+                users.push({
                     username: data.username,
-                    pdfVersion: data.pdfVersion,
-                    timestamp: new Date().toISOString()
+                    password: data.password, // Simple persistence
+                    createdAt: new Date().toISOString(),
+                    lastOnline: Date.now()
                 });
-                
-                fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2));
-                
+                fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
                 res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: true, message: 'Saved to database' }));
+                res.end(JSON.stringify({ success: true }));
             } catch (err) {
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: false, error: 'Invalid request' }));
+                res.writeHead(400); res.end('Invalid request');
+            }
+        });
+        return;
+    }
+
+    if (req.method === 'POST' && (pathname === '/api/login' || pathname === '/api/heartbeat')) {
+        let body = '';
+        req.on('data', chunk => body += chunk.toString());
+        req.on('end', () => {
+            try {
+                const data = JSON.parse(body);
+                const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+                const user = users.find(u => u.username === data.username && u.password === data.password);
+                
+                if (!user) {
+                    res.writeHead(401, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'Invalid credentials' }));
+                }
+                
+                user.lastOnline = Date.now();
+                fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+
+                if (pathname === '/api/login') {
+                    if (data.pdfVersion) {
+                        const dbData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+                        dbData.push({
+                            username: data.username,
+                            pdfVersion: data.pdfVersion,
+                            timestamp: new Date().toISOString()
+                        });
+                        fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2));
+                    }
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ success: true }));
+                } else {
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ success: true }));
+                }
+            } catch (err) {
+                res.writeHead(400); res.end('Invalid request');
+            }
+        });
+        return;
+    }
+
+    if (req.method === 'GET' && pathname === '/api/annotations') {
+        const user = parsedUrl.searchParams.get('user');
+        const file = parsedUrl.searchParams.get('file');
+        const pwd = parsedUrl.searchParams.get('pwd');
+        
+        const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+        if (!users.find(u => u.username === user && u.password === pwd)) {
+            res.writeHead(401); return res.end('Unauthorized');
+        }
+
+        const safeFilename = path.basename(user) + '_' + path.basename(file) + '.json';
+        const annPath = path.join(ANNOTATIONS_DIR, safeFilename);
+
+        let annotations = {};
+        if (fs.existsSync(annPath)) {
+            annotations = JSON.parse(fs.readFileSync(annPath, 'utf8'));
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(annotations));
+        return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/annotations') {
+        let body = '';
+        req.on('data', chunk => body += chunk.toString());
+        req.on('end', () => {
+            try {
+                const data = JSON.parse(body);
+                const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+                if (!users.find(u => u.username === data.user && u.password === data.pwd)) {
+                    res.writeHead(401); return res.end('Unauthorized');
+                }
+
+                const safeFilename = path.basename(data.user) + '_' + path.basename(data.file) + '.json';
+                const annPath = path.join(ANNOTATIONS_DIR, safeFilename);
+
+                let annotations = {};
+                if (fs.existsSync(annPath)) {
+                    annotations = JSON.parse(fs.readFileSync(annPath, 'utf8'));
+                }
+                
+                annotations[data.page] = data.dataUrl;
+                fs.writeFileSync(annPath, JSON.stringify(annotations));
+                res.writeHead(200); res.end();
+            } catch(e) {
+                res.writeHead(500); res.end();
             }
         });
         return;
@@ -108,10 +209,12 @@ const server = http.createServer((req, res) => {
         try {
             const dbData = fs.readFileSync(DB_FILE, 'utf8');
             const blockedData = fs.readFileSync(BLOCKED_FILE, 'utf8');
+            const usersData = fs.readFileSync(USERS_FILE, 'utf8');
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ 
                 database: JSON.parse(dbData), 
-                blocked: JSON.parse(blockedData) 
+                blocked: JSON.parse(blockedData),
+                users: JSON.parse(usersData)
             }));
         } catch(e) {
             res.writeHead(500);

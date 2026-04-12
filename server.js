@@ -35,7 +35,6 @@ if (!fs.existsSync(BLOCKED_FILE)) {
     if (fs.existsSync(localBlockedPath) && IS_PROD_VOL) {
         fs.copyFileSync(localBlockedPath, BLOCKED_FILE);
     } else {
-    } else {
         fs.writeFileSync(BLOCKED_FILE, JSON.stringify([], null, 2));
     }
 }

@@ -132,30 +132,36 @@ const server = http.createServer((req, res) => {
                     return res.end(JSON.stringify({ success: false, error: 'Banned' }));
                 }
                 const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-                const user = users.find(u => u.username === data.username && u.password === data.password);
+                const user = users.find(u => u.username === data.username && (u.password === data.password || u.token === data.token));
                 
                 if (!user) {
                     res.writeHead(401, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ success: false, error: 'Invalid credentials' }));
+                    return res.end(JSON.stringify({ success: false, error: 'Invalid credentials or expired session' }));
                 }
                 
                 user.lastOnline = Date.now();
                 user.ip = clientIp;
-                fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
 
                 if (pathname === '/api/login') {
+                    // Generate a new session token on each fresh login to prevent concurrent sharing
+                    user.token = require('crypto').randomBytes(16).toString('hex');
+                    
                     if (data.pdfVersion) {
                         const dbData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
                         dbData.push({
                             username: data.username,
                             pdfVersion: data.pdfVersion,
-                            timestamp: new Date().toISOString()
+                            timestamp: new Date().toISOString(),
+                            ip: clientIp,
+                            action: 'login'
                         });
                         fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2));
                     }
+                    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
                     res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ success: true }));
+                    res.end(JSON.stringify({ success: true, token: user.token }));
                 } else {
+                    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ success: true }));
                 }
@@ -169,10 +175,10 @@ const server = http.createServer((req, res) => {
     if (req.method === 'GET' && pathname === '/api/annotations') {
         const user = parsedUrl.searchParams.get('user');
         const file = parsedUrl.searchParams.get('file');
-        const pwd = parsedUrl.searchParams.get('pwd');
+        const token = parsedUrl.searchParams.get('token');
         
         const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-        if (!users.find(u => u.username === user && u.password === pwd)) {
+        if (!users.find(u => u.username === user && u.token === token)) {
             res.writeHead(401); return res.end('Unauthorized');
         }
 
@@ -195,7 +201,7 @@ const server = http.createServer((req, res) => {
             try {
                 const data = JSON.parse(body);
                 const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-                if (!users.find(u => u.username === data.user && u.password === data.pwd)) {
+                if (!users.find(u => u.username === data.user && u.token === data.token)) {
                     res.writeHead(401); return res.end('Unauthorized');
                 }
 
@@ -377,20 +383,48 @@ const server = http.createServer((req, res) => {
     if (req.method === 'GET' && pathname === '/api/document') {
         const file = parsedUrl.searchParams.get('file');
         const user = parsedUrl.searchParams.get('user');
+        const token = parsedUrl.searchParams.get('token');
 
-        if (!file || !user) {
-            res.writeHead(400);
-            return res.end('Missing file or user parameters');
+        if (!file || !user || !token) {
+            res.writeHead(401);
+            return res.end('Unauthorized: Missing session credentials');
         }
 
         try {
+            const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+            const userData = users.find(u => u.username === user && u.token === token);
+            
+            if (!userData) {
+                res.writeHead(401);
+                return res.end('Unauthorized: Session expired or invalid token');
+            }
+
             const blockedUsers = JSON.parse(fs.readFileSync(BLOCKED_FILE, 'utf8'));
-            if (blockedUsers.includes(user)) {
+            if (blockedUsers.includes(user) || (userData.ip && blockedUsers.includes(userData.ip))) {
                 res.writeHead(403);
                 return res.end("You're banned from getting access to the Question Bank.");
             }
+
+            // Update user status
+            userData.lastOnline = Date.now();
+            userData.ip = clientIp;
+            fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+
+            // Log access to DB_FILE
+            const dbData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+            dbData.push({
+                username: user,
+                pdfVersion: file,
+                timestamp: new Date().toISOString(),
+                ip: clientIp,
+                action: 'open_document'
+            });
+            fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2));
+
         } catch(e) {
-            console.error('Blocked JSON parse error:', e);
+            console.error('Auth check error:', e);
+            res.writeHead(500);
+            return res.end('Internal Server Error');
         }
 
         // Secure file path resolving

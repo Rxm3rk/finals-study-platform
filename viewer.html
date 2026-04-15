@@ -164,7 +164,9 @@
         const urlParams = new URLSearchParams(window.location.search);
         const fileName = urlParams.get('file');
         const user = urlParams.get('user');
-        const pwd = urlParams.get('pwd');
+        const token = localStorage.getItem('session_token');
+        const storedUser = localStorage.getItem('saved_username');
+        console.log('Viewer loaded:', { fileName, user, storedUser, tokenFound: !!token });
 
         // Zoom state
         let globalZoom = 1.0;
@@ -228,10 +230,11 @@
             }
         });
 
-        if (!fileName || !user) {
-            document.getElementById('loader').innerText = "Error: Invalid document URL or missing user authentication.";
+        if (!fileName || !user || !token || user !== storedUser) {
+            document.getElementById('loader').innerText = "Error: Session expired or invalid access. Redirecting to login...";
+            setTimeout(() => { window.location.href = 'index.html'; }, 3000);
         } else {
-            const pdfUrl = '/api/document?file=' + encodeURIComponent(fileName) + '&user=' + encodeURIComponent(user);
+            const pdfUrl = '/api/document?file=' + encodeURIComponent(fileName) + '&user=' + encodeURIComponent(user) + '&token=' + encodeURIComponent(token);
 
             // Configure PDF.js worker
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
@@ -246,7 +249,7 @@
                 // Fetch full Cloud Annotations object for this document
                 let serverAnnotations = {};
                 try {
-                    const annRes = await fetch(`/api/annotations?file=${encodeURIComponent(fileName)}&user=${encodeURIComponent(user)}&pwd=${encodeURIComponent(pwd)}`);
+                    const annRes = await fetch(`/api/annotations?file=${encodeURIComponent(fileName)}&user=${encodeURIComponent(user)}&token=${encodeURIComponent(token)}`);
                     if (annRes.ok) serverAnnotations = await annRes.json();
                 } catch(e) { console.error('Cloud load fail', e); }
 
@@ -255,7 +258,7 @@
                     fetch('/api/heartbeat', {
                         method: 'POST',
                         headers: {'Content-Type':'application/json'},
-                        body: JSON.stringify({username: user, password: pwd})
+                        body: JSON.stringify({username: user, token: token})
                     }).catch(()=>{});
                 }, 20000);
 
@@ -482,7 +485,7 @@
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({
                             user: user,
-                            pwd: pwd,
+                            token: token,
                             file: fileName,
                             page: pageNum,
                             dataUrl: dataUrl

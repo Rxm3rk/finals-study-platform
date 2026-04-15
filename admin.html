@@ -167,6 +167,7 @@
                     <th>Timestamp</th>
                     <th>C3 Username</th>
                     <th>PDF Accessed</th>
+                    <th>IP Address</th>
                     <th>Action</th>
                 </tr>
             </thead>
@@ -257,6 +258,7 @@
                             <td style="color: #666; font-size: 0.85rem;">${cleanTime}</td>
                             <td style="font-weight: 600;">${log.username}</td>
                             <td>${log.pdfVersion}</td>
+                            <td>${log.ip || 'N/A'}</td>
                             <td><button onclick="deleteLog('${log.timestamp}', '${log.username}')" style="padding: 4px 10px; font-size: 0.75rem; background: #dc3545;">Delete</button></td>
                         `;
                         tbody.appendChild(tr);

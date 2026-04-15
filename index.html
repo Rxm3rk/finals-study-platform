@@ -254,39 +254,123 @@
         .pdf-options {
             display: flex;
             flex-direction: column;
-            gap: 0.75rem;
+            gap: 1rem;
         }
 
-        .pdf-option {
+        /* Categorized Explorer Styles */
+        .category-item {
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #fafafa;
+            transition: all 0.2s ease;
+        }
+
+        .category-header {
             display: flex;
             align-items: center;
             padding: 1rem 1.25rem;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
             cursor: pointer;
-            transition: all 0.2s ease;
-            background-color: #fafafa;
-        }
-
-        .pdf-option:hover {
-            border-color: #bbbbbb;
-        }
-        
-        .pdf-option.selected {
-            border-color: #000000;
-            background-color: #ffffff;
-            box-shadow: 0 0 0 1px #000000;
-        }
-
-        .pdf-option input {
-            margin-right: 1rem;
-            accent-color: #000000;
-            transform: scale(1.1);
-        }
-
-        .pdf-option span {
+            font-weight: 600;
             font-size: 0.95rem;
+            user-select: none;
+            gap: 0.75rem;
+        }
+
+        .category-header:hover {
+            background: #f0f0f0;
+        }
+
+        .category-icon {
+            width: 18px;
+            height: 18px;
+            transition: transform 0.2s ease;
+            color: #888;
+        }
+
+        .category-item.active {
+            border-color: #000;
+            background: #fff;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+        }
+
+        .category-item.active .category-icon {
+            transform: rotate(90deg);
+            color: #000;
+        }
+
+        .category-content {
+            display: none;
+            padding: 0.5rem 1rem 1rem 3rem;
+            flex-direction: column;
+            gap: 0.5rem;
+            border-top: 1px solid #f0f0f0;
+        }
+
+        .category-item.active .category-content {
+            display: flex;
+        }
+
+        /* Subcategory Styles */
+        .subcategory-item {
+            margin-bottom: 0.25rem;
+        }
+
+        .subcategory-item .category-header {
+            padding: 0.5rem 0;
+            background: transparent;
+        }
+
+        .subcategory-item.active .category-content {
+            display: flex;
+        }
+
+        .subcategory-item .category-content {
+            padding-left: 1.5rem;
+            border-top: none;
+            gap: 0.25rem;
+        }
+
+        .file-select {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            color: #444;
+            transition: all 0.2s ease;
+            gap: 0.75rem;
+            border: 1px solid transparent;
+        }
+
+        .file-select:hover {
+            background: #f5f5f5;
+        }
+
+        .file-select.selected {
+            background: #000;
+            color: #fff;
             font-weight: 500;
+        }
+
+        .file-select svg {
+            width: 16px;
+            height: 16px;
+            opacity: 0.6;
+        }
+
+        .file-select.selected svg {
+            opacity: 1;
+            filter: invert(1);
+        }
+
+        .coming-soon {
+            opacity: 0.5;
+            cursor: default;
+            font-style: italic;
+            font-size: 0.85rem;
+            padding: 0.5rem 1rem;
         }
 
         .btn-full {
@@ -375,20 +459,104 @@
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Select PDF Version</label>
+                    <label class="form-label">Select Resource</label>
+                    <input type="hidden" id="pdfVersion" name="pdfVersion" value="Unclassified.pdf">
+                    
                     <div class="pdf-options">
-                        <label class="pdf-option selected" id="opt-1">
-                            <input type="radio" name="pdfVersion" value="Unclassified.pdf" checked onchange="updateRadioStyles()">
-                            <span>Unclassified Bank</span>
-                        </label>
-                        <label class="pdf-option" id="opt-2">
-                            <input type="radio" name="pdfVersion" value="Classified by lectures.pdf" onchange="updateRadioStyles()">
-                            <span>Classified By Lectures</span>
-                        </label>
-                        <label class="pdf-option" id="opt-3">
-                            <input type="radio" name="pdfVersion" value="Distribution of finals.pdf" onchange="updateRadioStyles()">
-                            <span>Distribution Of Finals</span>
-                        </label>
+                        <!-- Theory Finals -->
+                        <div class="category-item active" id="cat-theory">
+                            <div class="category-header" onclick="toggleCategory('cat-theory')">
+                                <svg class="category-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                                <span>Theory Finals</span>
+                            </div>
+                            <div class="category-content">
+                                <div class="file-select selected" onclick="selectResource(this, 'Unclassified.pdf')">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                    <span>Unclassified Bank</span>
+                                </div>
+                                <div class="file-select" onclick="selectResource(this, 'Classified by lectures.pdf')">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                    <span>Classified By Lectures</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Block Questions -->
+                        <div class="category-item" id="cat-block">
+                            <div class="category-header" onclick="toggleCategory('cat-block')">
+                                <svg class="category-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                                <span>Block Questions</span>
+                            </div>
+                            <div class="category-content">
+                                <!-- Lecture Classified Subfolder -->
+                                <div class="subcategory-item" id="sub-lecture-classified">
+                                    <div class="category-header" onclick="toggleCategory('sub-lecture-classified')">
+                                        <svg class="category-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                                        <span>Lecture Classified</span>
+                                    </div>
+                                    <div class="category-content">
+                                        <div class="file-select" onclick="selectResource(this, 'Medicine - full context bank.pdf')">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                            <span>Medicine - full context</span>
+                                        </div>
+                                        <div class="file-select" onclick="selectResource(this, 'Neuropsychiatry - full context bank.pdf')">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                            <span>Neuropsychiatry - full context</span>
+                                        </div>
+                                        <div class="file-select" onclick="selectResource(this, 'Pediatrics - full context bank.pdf')">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                            <span>Pediatrics - full context</span>
+                                        </div>
+                                        <div class="file-select" onclick="selectResource(this, 'Surgery - full context bank.pdf')">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                            <span>Surgery - full context</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Non-Classified Subfolder -->
+                                <div class="subcategory-item" id="sub-non-classified">
+                                    <div class="category-header" onclick="toggleCategory('sub-non-classified')">
+                                        <svg class="category-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                                        <span>Non-Classified</span>
+                                    </div>
+                                    <div class="category-content">
+                                        <div class="file-select" onclick="selectResource(this, 'Medicine - (no lecture headings).pdf')">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                            <span>Medicine - no headings</span>
+                                        </div>
+                                        <div class="file-select" onclick="selectResource(this, 'Neuropsychiatry - (no lecture headings).pdf')">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                            <span>Neuropsychiatry - no headings</span>
+                                        </div>
+                                        <div class="file-select" onclick="selectResource(this, 'Pediatrics - (no lecture headings).pdf')">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                            <span>Pediatrics - no headings</span>
+                                        </div>
+                                        <div class="file-select" onclick="selectResource(this, 'Surgery - (no lecture headings).pdf')">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                            <span>Surgery - no headings</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="file-select" onclick="selectResource(this, 'Distribution of finals.pdf')">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                    <span>Distribution Of Finals</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- OSCE -->
+                        <div class="category-item" id="cat-osce">
+                            <div class="category-header" onclick="toggleCategory('cat-osce')">
+                                <svg class="category-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                                <span>OSCE</span>
+                            </div>
+                            <div class="category-content">
+                                <div class="coming-soon">More material arriving soon...</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -437,8 +605,21 @@
                 document.getElementById('tabLogin').parentElement.style.display = 'none';
 
                 const p = document.createElement('p');
-                p.style = "font-weight: 600; font-size:1.15rem; margin-bottom: 1.5rem; color: #111;";
+                p.id = "welcomeMessage";
+                p.style = "font-weight: 600; font-size:1.15rem; margin-bottom: 0.5rem; color: #111;";
                 p.innerText = `Welcome back, ${savedU}!`;
+                
+                const logoutLink = document.createElement('a');
+                logoutLink.href = "#";
+                logoutLink.innerText = "Not you? Log out";
+                logoutLink.style = "font-size: 0.8rem; color: #d93025; text-decoration: none; display: block; margin-bottom: 1.5rem;";
+                logoutLink.onclick = (e) => {
+                    e.preventDefault();
+                    localStorage.clear();
+                    window.location.reload();
+                };
+
+                document.getElementById('accessForm').prepend(logoutLink);
                 document.getElementById('accessForm').prepend(p);
             }
         };
@@ -447,7 +628,7 @@
             e.preventDefault();
             const username = usernameInput.value.trim();
             const password = document.getElementById('password').value.trim();
-            const pdfVersion = document.querySelector('input[name="pdfVersion"]:checked').value;
+            const pdfVersion = document.getElementById('pdfVersion').value;
             
             if (username && password) {
                 const btn = document.querySelector('.btn-full');
@@ -477,12 +658,16 @@
                     
                     const data = await res.json();
                     if (!data.success) {
-                        alert('Error: Account not found or wrong password.');
+                        alert(data.error || 'Error: Account not found or wrong password.');
                         btn.innerText = originalText; btn.disabled = false; return;
                     }
 
                     localStorage.setItem('saved_username', username);
                     localStorage.setItem('saved_password', password);
+                    if (data.token) {
+                        localStorage.setItem('session_token', data.token);
+                        console.log('Session token saved:', data.token);
+                    }
 
                 } catch(e) {
                     console.error("Failed to log:", e);
@@ -492,7 +677,7 @@
 
                 btn.innerText = originalText;
                 btn.disabled = false;
-                window.location.href = 'viewer.html?file=' + encodeURIComponent(pdfVersion) + '&user=' + encodeURIComponent(username) + '&pwd=' + encodeURIComponent(password);
+                window.location.href = 'viewer.html?file=' + encodeURIComponent(pdfVersion) + '&user=' + encodeURIComponent(username);
                 closeModal();
             }
         }
@@ -511,14 +696,27 @@
             }
         });
 
-        // Interactive styling for radio boxes
-        function updateRadioStyles() {
-            document.querySelectorAll('.pdf-option').forEach(el => {
-                el.classList.remove('selected');
-                if (el.querySelector('input').checked) {
-                    el.classList.add('selected');
-                }
-            });
+        // Explorer Logic
+        function toggleCategory(id) {
+            const item = document.getElementById(id);
+            const isActive = item.classList.contains('active');
+            
+            if (isActive) {
+                item.classList.remove('active');
+            } else {
+                item.classList.add('active');
+            }
+        }
+
+        function selectResource(element, filename) {
+            if (!filename) return;
+            
+            // UI Selection
+            document.querySelectorAll('.file-select').forEach(el => el.classList.remove('selected'));
+            element.classList.add('selected');
+            
+            // Value update
+            document.getElementById('pdfVersion').value = filename;
         }
     </script>
 </body>

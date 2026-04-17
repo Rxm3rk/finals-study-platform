@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, maximum-scale=5.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
     <title>Secure Document Viewer</title>
     <!-- Use PDF.js from unpkg/cdnjs -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
@@ -12,44 +12,96 @@
             padding: 0;
             background-color: #e5e5e5;
             height: 100%;
-            overflow: auto;
+            overflow: hidden;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             user-select: none;
             -webkit-user-select: none;
             -webkit-overflow-scrolling: touch;
         }
 
-        @media print {
-            body { display: none !important; }
+        body {
+            overscroll-behavior: none;
+        }
+
+        #viewer-viewport {
+            position: fixed;
+            top: 60px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+            touch-action: auto;
+            padding: 20px 15px 30px;
+            box-sizing: border-box;
+        }
+
+        #viewer-viewport.draw-locked {
+            overflow: hidden;
+        }
+
+        #viewer-stage {
+            position: relative;
+            min-width: 100%;
+            min-height: 100%;
+        }
+
+        #viewer-stage.centered {
+            display: flex;
+            justify-content: center;
+        }
+
+        #viewer-stage.centered #pdf-container {
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        #viewer-stage.pinch-zooming,
+        #viewer-stage.pinch-zooming .page-container {
+            transition: none !important;
+        }
+
+        #viewer-stage:not(.centered) #pdf-container {
+            margin-left: 0;
+            margin-right: 0;
+        }
+
+        #viewer-stage:not(.centered) {
+            display: block;
+        }
+
+        #viewer-stage::after {
+            content: '';
+            display: block;
+            clear: both;
         }
 
         #pdf-container {
             display: flex;
             flex-direction: column;
-            align-items: center;
-            width: 100%;
-            padding: 20px 0;
-            margin-top: 60px;
-            touch-action: pan-y;
+            align-items: stretch;
+            width: max-content;
+            min-width: 0;
+            padding: 0;
+            margin: 0;
+            touch-action: auto;
         }
 
         .page-container {
             position: relative;
-            margin-bottom: 25px;
+            margin: 0 0 25px;
             box-shadow: 0 5px 15px rgba(0,0,0,0.2);
             background: #fff;
-            scroll-margin-top: 80px;
-            transition: width 0.12s ease-out, height 0.12s ease-out;
-        }
-
-        #pdf-container.pinch-zooming .page-container {
-            transition: none;
+            scroll-margin-top: 20px;
         }
 
         .pdf-base-img {
             width: 100%;
             height: 100%;
             display: block;
+            pointer-events: none;
+            -webkit-user-drag: none;
         }
 
         canvas {
@@ -65,6 +117,10 @@
 
         body.draw-mode .page-overlay {
             touch-action: none;
+        }
+
+        @media print {
+            body { display: none !important; }
         }
 
         #toolbar {
@@ -161,7 +217,11 @@
     </div>
 
     <div id="loader">Loading secure document...</div>
-    <div id="pdf-container"></div>
+    <div id="viewer-viewport">
+        <div id="viewer-stage" class="centered">
+            <div id="pdf-container"></div>
+        </div>
+    </div>
 
     <script>
         // Disable printing
@@ -207,7 +267,10 @@
 
         // Zoom state
         let globalZoom = 1.0;
+        let manualZoomActive = false;
         const pdfContainer = document.getElementById('pdf-container');
+        const viewerViewport = document.getElementById('viewer-viewport');
+        const viewerStage = document.getElementById('viewer-stage');
         const zoomLabel = document.getElementById('zoomLabel');
         const MIN_ZOOM = 0.4;
         const MAX_ZOOM = 3.0;
@@ -220,6 +283,20 @@
             return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
         }
 
+        function getFitViewportWidth() {
+            return Math.max(viewerViewport.clientWidth - 30, 160);
+        }
+
+        function fitZoomToViewport() {
+            return clampZoom(getFitViewportWidth() / basePageWidth);
+        }
+
+        function updateStageAlignment() {
+            const contentWidth = pdfContainer.scrollWidth;
+            const centered = contentWidth <= viewerViewport.clientWidth;
+            viewerStage.classList.toggle('centered', centered);
+        }
+
         function renderZoom() {
             const roundedZoom = Math.round(globalZoom * 100) / 100;
             document.querySelectorAll('.page-container').forEach(container => {
@@ -229,26 +306,57 @@
                 container.style.width = `${Math.round(baseWidth * roundedZoom)}px`;
                 container.style.height = `${Math.round(baseHeight * roundedZoom)}px`;
             });
+            requestAnimationFrame(updateStageAlignment);
             zoomLabel.innerText = Math.round(roundedZoom * 100) + '%';
         }
 
-        function updateZoom(newZoom) {
-            globalZoom = clampZoom(newZoom);
+        function getAnchorContentPoint(anchor) {
+            if (!anchor) return null;
+            return {
+                x: (viewerViewport.scrollLeft + anchor.x) / globalZoom,
+                y: (viewerViewport.scrollTop + anchor.y) / globalZoom
+            };
+        }
+
+        function restoreAnchorContentPoint(anchor, point) {
+            if (!anchor || !point) return;
+            viewerViewport.scrollLeft = Math.max(0, point.x * globalZoom - anchor.x);
+            viewerViewport.scrollTop = Math.max(0, point.y * globalZoom - anchor.y);
+        }
+
+        function getViewportCenterAnchor() {
+            return {
+                x: viewerViewport.clientWidth / 2,
+                y: viewerViewport.clientHeight / 2
+            };
+        }
+
+        function applyZoom(newZoom, anchor, options = {}) {
+            const nextZoom = clampZoom(newZoom);
+            const contentPoint = getAnchorContentPoint(anchor);
+            globalZoom = nextZoom;
             renderZoom();
+            requestAnimationFrame(() => {
+                restoreAnchorContentPoint(anchor, contentPoint);
+                if (!options.preserveAutoFit) {
+                    const fitZoom = fitZoomToViewport();
+                    manualZoomActive = Math.abs(globalZoom - fitZoom) > 0.02;
+                }
+            });
         }
 
-        function fitZoomToViewport() {
-            const availableWidth = Math.max(window.innerWidth - 30, 160);
-            return clampZoom(availableWidth / basePageWidth);
+        function updateZoom(newZoom, anchor = getViewportCenterAnchor(), options = {}) {
+            applyZoom(newZoom, anchor, options);
         }
 
-        function syncZoomToViewport() {
-            if (pinchState) return;
-            const fittedZoom = fitZoomToViewport();
-            if (globalZoom <= fittedZoom + 0.02) {
-                globalZoom = fittedZoom;
+        function syncZoomToViewport(force = false) {
+            const fitZoom = fitZoomToViewport();
+            if (!force && manualZoomActive) {
                 renderZoom();
+                return;
             }
+            manualZoomActive = false;
+            applyZoom(fitZoom, null, { preserveAutoFit: true });
         }
 
         function setContainerScale(container, viewport) {
@@ -290,14 +398,22 @@
             return Math.hypot(dx, dy);
         }
 
-        function schedulePinchZoom(nextZoom) {
+        function getTouchMidpoint(touches) {
+            const rect = viewerViewport.getBoundingClientRect();
+            return {
+                x: ((touches[0].clientX + touches[1].clientX) / 2) - rect.left,
+                y: ((touches[0].clientY + touches[1].clientY) / 2) - rect.top
+            };
+        }
+
+        function schedulePinchZoom(nextZoom, anchor) {
             pinchState.pendingZoom = clampZoom(nextZoom);
+            pinchState.anchor = anchor;
             if (pinchRaf) return;
             pinchRaf = requestAnimationFrame(() => {
                 pinchRaf = null;
                 if (!pinchState) return;
-                globalZoom = pinchState.pendingZoom;
-                renderZoom();
+                applyZoom(pinchState.pendingZoom, pinchState.anchor);
             });
         }
 
@@ -305,9 +421,10 @@
             pinchState = {
                 startDistance: getTouchDistance(touches),
                 startZoom: globalZoom,
-                pendingZoom: globalZoom
+                pendingZoom: globalZoom,
+                anchor: getTouchMidpoint(touches)
             };
-            pdfContainer.classList.add('pinch-zooming');
+            viewerStage.classList.add('pinch-zooming');
         }
 
         function movePinchZoom(touches) {
@@ -315,7 +432,7 @@
             const distance = getTouchDistance(touches);
             if (!distance || !pinchState.startDistance) return;
             const scale = distance / pinchState.startDistance;
-            schedulePinchZoom(pinchState.startZoom * scale);
+            schedulePinchZoom(pinchState.startZoom * scale, getTouchMidpoint(touches));
         }
 
         function endPinchZoom() {
@@ -324,11 +441,10 @@
                 pinchRaf = null;
             }
             if (pinchState) {
-                globalZoom = pinchState.pendingZoom;
-                renderZoom();
+                applyZoom(pinchState.pendingZoom, pinchState.anchor);
             }
             pinchState = null;
-            pdfContainer.classList.remove('pinch-zooming');
+            viewerStage.classList.remove('pinch-zooming');
         }
 
         renderZoom();
@@ -340,7 +456,7 @@
             if (globalZoom > MIN_ZOOM) updateZoom(globalZoom - 0.2);
         });
 
-        pdfContainer.addEventListener('touchstart', (e) => {
+        viewerViewport.addEventListener('touchstart', (e) => {
             if (isDrawMode) return;
             if (e.touches.length === 2) {
                 e.preventDefault();
@@ -348,7 +464,7 @@
             }
         }, { passive: false });
 
-        pdfContainer.addEventListener('touchmove', (e) => {
+        viewerViewport.addEventListener('touchmove', (e) => {
             if (!pinchState || isDrawMode) return;
             if (e.touches.length === 2) {
                 e.preventDefault();
@@ -356,11 +472,11 @@
             }
         }, { passive: false });
 
-        pdfContainer.addEventListener('touchend', () => {
+        viewerViewport.addEventListener('touchend', () => {
             if (pinchState) endPinchZoom();
         });
 
-        pdfContainer.addEventListener('touchcancel', () => {
+        viewerViewport.addEventListener('touchcancel', () => {
             if (pinchState) endPinchZoom();
         });
 
@@ -368,25 +484,12 @@
             if (!pinchState) syncZoomToViewport();
         });
 
-        document.addEventListener('gesturestart', (e) => {
-            if (!isDrawMode) e.preventDefault();
-        }, { passive: false });
+        window.addEventListener('orientationchange', () => {
+            setTimeout(() => syncZoomToViewport(), 60);
+        });
 
-        document.addEventListener('gesturechange', (e) => {
-            if (!isDrawMode) e.preventDefault();
-        }, { passive: false });
+        requestAnimationFrame(updateStageAlignment);
 
-        document.addEventListener('gestureend', (e) => {
-            if (!isDrawMode) e.preventDefault();
-        }, { passive: false });
-
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', () => {
-                if (!pinchState) syncZoomToViewport();
-            });
-        }
-
-        document.documentElement.style.touchAction = 'manipulation';
 
         // Draw State
         let isDrawMode = false;
@@ -400,12 +503,11 @@
             if (isDrawMode) {
                 drawToggle.classList.add('active');
                 document.body.classList.add('draw-mode');
-                // Prevent touch scrolling globally when draw mode is on to avoid accidental jumps
-                document.body.style.overflow = 'hidden'; 
+                viewerViewport.classList.add('draw-locked');
             } else {
                 drawToggle.classList.remove('active');
                 document.body.classList.remove('draw-mode');
-                document.body.style.overflow = 'auto';
+                viewerViewport.classList.remove('draw-locked');
             }
         });
 
@@ -461,7 +563,11 @@
                     if (page >= 1 && page <= pdf.numPages) {
                         const target = document.querySelector(`.page-container[data-page="${page}"]`);
                         if (target) {
-                            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            viewerViewport.scrollTo({
+                                top: Math.max(0, target.offsetTop - 20),
+                                left: viewerViewport.scrollLeft,
+                                behavior: 'smooth'
+                            });
                         }
                     }
                 });
@@ -473,7 +579,10 @@
                             pageInput.value = entry.target.dataset.page;
                         }
                     });
-                }, { rootMargin: '-50% 0px' });
+                }, {
+                    root: viewerViewport,
+                    rootMargin: '-45% 0px -45% 0px'
+                });
 
                 // Sequentially process ALL pages to IMGs to safely bypass iOS Canvas RAM limits
                 const processAllPages = async () => {

@@ -662,6 +662,8 @@
                 btn.innerText = 'Verifying...';
                 btn.disabled = true;
 
+                let viewerUrl = null;
+
                 try {
                     if (isRegisterMode) {
                         const regRes = await fetch('/api/register', {
@@ -681,7 +683,7 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ username, password, pdfVersion })
                     });
-                    
+
                     const data = await res.json();
                     if (!data.success) {
                         alert(data.error || 'Error: Account not found or wrong password.');
@@ -702,6 +704,7 @@
                     if (data.token) {
                         viewerParams.set('token', data.token);
                     }
+                    viewerUrl = 'viewer.html?' + viewerParams.toString();
 
                 } catch(e) {
                     console.error("Failed to log:", e);
@@ -711,7 +714,7 @@
 
                 btn.innerText = originalText;
                 btn.disabled = false;
-                window.location.href = 'viewer.html?' + viewerParams.toString();
+                window.location.href = viewerUrl;
                 closeModal();
             }
         }

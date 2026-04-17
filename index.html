@@ -569,6 +569,32 @@
         const modal = document.getElementById('modalOverlay');
         const usernameInput = document.getElementById('username');
 
+        function safeStorageGet(key) {
+            try {
+                return localStorage.getItem(key);
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function safeStorageSet(key, value) {
+            try {
+                localStorage.setItem(key, value);
+                return true;
+            } catch (e) {
+                console.warn('Storage unavailable:', key, e);
+                return false;
+            }
+        }
+
+        function safeStorageClear() {
+            try {
+                localStorage.clear();
+            } catch (e) {
+                console.warn('Storage clear unavailable:', e);
+            }
+        }
+
         function openModal() {
             modal.classList.add('active');
             document.body.style.overflow = 'hidden';
@@ -593,8 +619,8 @@
         }
 
         window.onload = () => {
-            const savedU = localStorage.getItem('saved_username');
-            const savedP = localStorage.getItem('saved_password');
+            const savedU = safeStorageGet('saved_username');
+            const savedP = safeStorageGet('saved_password');
             if (savedU && savedP) {
                 document.getElementById('username').value = savedU;
                 document.getElementById('password').value = savedP;
@@ -615,7 +641,7 @@
                 logoutLink.style = "font-size: 0.8rem; color: #d93025; text-decoration: none; display: block; margin-bottom: 1.5rem;";
                 logoutLink.onclick = (e) => {
                     e.preventDefault();
-                    localStorage.clear();
+                    safeStorageClear();
                     window.location.reload();
                 };
 
@@ -662,11 +688,19 @@
                         btn.innerText = originalText; btn.disabled = false; return;
                     }
 
-                    localStorage.setItem('saved_username', username);
-                    localStorage.setItem('saved_password', password);
+                    safeStorageSet('saved_username', username);
+                    safeStorageSet('saved_password', password);
                     if (data.token) {
-                        localStorage.setItem('session_token', data.token);
+                        safeStorageSet('session_token', data.token);
                         console.log('Session token saved:', data.token);
+                    }
+
+                    const viewerParams = new URLSearchParams({
+                        file: pdfVersion,
+                        user: username
+                    });
+                    if (data.token) {
+                        viewerParams.set('token', data.token);
                     }
 
                 } catch(e) {
@@ -677,7 +711,7 @@
 
                 btn.innerText = originalText;
                 btn.disabled = false;
-                window.location.href = 'viewer.html?file=' + encodeURIComponent(pdfVersion) + '&user=' + encodeURIComponent(username);
+                window.location.href = 'viewer.html?' + viewerParams.toString();
                 closeModal();
             }
         }

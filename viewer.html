@@ -161,11 +161,38 @@
             }
         });
 
+        function safeStorageGet(key) {
+            try {
+                return localStorage.getItem(key);
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function safeStorageSet(key, value) {
+            try {
+                localStorage.setItem(key, value);
+                return true;
+            } catch (e) {
+                console.warn('Storage unavailable:', key, e);
+                return false;
+            }
+        }
+
         const urlParams = new URLSearchParams(window.location.search);
         const fileName = urlParams.get('file');
         const user = urlParams.get('user');
-        const token = localStorage.getItem('session_token');
-        const storedUser = localStorage.getItem('saved_username');
+        const tokenFromQuery = urlParams.get('token');
+        const token = tokenFromQuery || safeStorageGet('session_token');
+        const storedUser = safeStorageGet('saved_username');
+
+        if (tokenFromQuery) {
+            safeStorageSet('session_token', tokenFromQuery);
+        }
+        if (user) {
+            safeStorageSet('saved_username', user);
+        }
+
         console.log('Viewer loaded:', { fileName, user, storedUser, tokenFound: !!token });
 
         // Zoom state
@@ -230,7 +257,7 @@
             }
         });
 
-        if (!fileName || !user || !token || user !== storedUser) {
+        if (!fileName || !user || !token) {
             document.getElementById('loader').innerText = "Error: Session expired or invalid access. Redirecting to login...";
             setTimeout(() => { window.location.href = 'index.html'; }, 3000);
         } else {

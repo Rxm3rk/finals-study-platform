@@ -249,6 +249,14 @@
             }
         }
 
+        function safeStorageClear() {
+            try {
+                localStorage.clear();
+            } catch (e) {
+                console.warn('Storage clear unavailable:', e);
+            }
+        }
+
         const urlParams = new URLSearchParams(window.location.search);
         const fileName = urlParams.get('file');
         const user = urlParams.get('user');
@@ -521,165 +529,230 @@
             }
         });
 
-        if (!fileName || !user || !token) {
+        async function refreshSessionToken() {
+            const savedPassword = safeStorageGet('saved_password');
+            if (!user || !savedPassword) return null;
+
+            const response = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: user, password: savedPassword, pdfVersion: fileName })
+            });
+
+            const data = await response.json();
+            if (!data.success || !data.token) {
+                throw new Error(data.error || 'Session refresh failed');
+            }
+
+            safeStorageSet('saved_username', user);
+            safeStorageSet('session_token', data.token);
+            return data.token;
+        }
+
+        async function buildViewerSession() {
+            let activeToken = token;
+            if (!fileName || !user) {
+                throw new Error('Missing viewer context');
+            }
+
+            if (!activeToken) {
+                activeToken = await refreshSessionToken();
+            }
+
+            return {
+                token: activeToken,
+                pdfUrl: '/api/document?file=' + encodeURIComponent(fileName) + '&user=' + encodeURIComponent(user) + '&token=' + encodeURIComponent(activeToken)
+            };
+        }
+
+        async function startViewer() {
+            try {
+                const session = await buildViewerSession();
+                const activeToken = session.token;
+                const pdfUrl = session.pdfUrl;
+
+                // Configure PDF.js worker
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+                let pageObserver;
+                let viewObserver;
+
+                const loadingTask = pdfjsLib.getDocument(pdfUrl);
+                loadingTask.promise.then(async function(pdf) {
+                    document.getElementById('loader').style.display = 'none';
+
+                    // Fetch full Cloud Annotations object for this document
+                    let serverAnnotations = {};
+                    try {
+                        const annRes = await fetch(`/api/annotations?file=${encodeURIComponent(fileName)}&user=${encodeURIComponent(user)}&token=${encodeURIComponent(activeToken)}`);
+                        if (annRes.ok) serverAnnotations = await annRes.json();
+                    } catch(e) { console.error('Cloud load fail', e); }
+
+                    // Heartbeat to keep user "Online" on admin dashboard
+                    setInterval(() => {
+                        fetch('/api/heartbeat', {
+                            method: 'POST',
+                            headers: {'Content-Type':'application/json'},
+                            body: JSON.stringify({username: user, token: activeToken})
+                        }).catch(()=>{});
+                    }, 20000);
+
+                    const pageInput = document.getElementById('pageNumberInput');
+                    const totalPagesLabel = document.getElementById('totalPagesLabel');
+                    totalPagesLabel.innerText = '/ ' + pdf.numPages;
+                    pageInput.max = pdf.numPages;
+
+                    pageInput.addEventListener('change', () => {
+                        let page = parseInt(pageInput.value);
+                        if (page >= 1 && page <= pdf.numPages) {
+                            const target = document.querySelector(`.page-container[data-page="${page}"]`);
+                            if (target) {
+                                viewerViewport.scrollTo({
+                                    top: Math.max(0, target.offsetTop - 20),
+                                    left: viewerViewport.scrollLeft,
+                                    behavior: 'smooth'
+                                });
+                            }
+                        }
+                    });
+
+                    // Observer to update page navigation input
+                    viewObserver = new IntersectionObserver((entries) => {
+                        entries.forEach(entry => {
+                            if (entry.isIntersecting) {
+                                pageInput.value = entry.target.dataset.page;
+                            }
+                        });
+                    }, {
+                        root: viewerViewport,
+                        rootMargin: '-45% 0px -45% 0px'
+                    });
+
+                    // Sequentially process ALL pages to IMGs to safely bypass iOS Canvas RAM limits
+                    const processAllPages = async () => {
+                        const baseScale = 1.5;
+                        viewerOutputScale = Math.min(window.devicePixelRatio || 1, 1.5);
+
+                        const renderCanvas = document.createElement('canvas');
+                        const renderCtx = renderCanvas.getContext('2d');
+
+                        const firstPage = await pdf.getPage(1);
+                        const viewport1 = firstPage.getViewport({scale: baseScale});
+                        basePageWidth = viewport1.width;
+                        globalZoom = fitZoomToViewport();
+
+                        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                            const container = document.createElement('div');
+                            container.className = 'page-container';
+                            container.dataset.page = pageNum;
+
+                            const pdfImg = document.createElement('img');
+                            pdfImg.className = 'pdf-base-img';
+
+                            const overlayImg = document.createElement('img');
+                            overlayImg.className = 'page-overlay';
+                            overlayImg.style.width = '100%';
+                            overlayImg.style.height = '100%';
+
+                            let savedData = serverAnnotations[pageNum];
+                            const oldStorageKey = `annotation_${user}_${fileName}_p${pageNum}`;
+                            if (!savedData) {
+                                savedData = localStorage.getItem(oldStorageKey);
+                                if (savedData) {
+                                    fetch('/api/annotations', {
+                                        method: 'POST',
+                                        headers: {'Content-Type': 'application/json'},
+                                        body: JSON.stringify({ user, token: activeToken, file: fileName, page: pageNum, dataUrl: savedData })
+                                    }).catch(()=>{});
+                                }
+                            }
+
+                            if (savedData) overlayImg.src = savedData;
+
+                            setContainerScale(container, viewport1);
+                            container.appendChild(pdfImg);
+                            container.appendChild(overlayImg);
+
+                            document.getElementById('pdf-container').appendChild(container);
+                            viewObserver.observe(container);
+                            setupOnDemandDrawing(container, overlayImg, viewport1, pageNum, activeToken);
+                        }
+
+                        renderZoom();
+
+                        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                            const container = document.querySelector(`.page-container[data-page="${pageNum}"]`);
+                            const page = await pdf.getPage(pageNum);
+                            const viewport = page.getViewport({scale: baseScale});
+
+                            if (pageNum === 1) {
+                                setContainerScale(container, viewport);
+                                renderZoom();
+                            } else {
+                                setContainerScale(container, viewport);
+                            }
+
+                            renderCanvas.width = Math.floor(viewport.width * viewerOutputScale);
+                            renderCanvas.height = Math.floor(viewport.height * viewerOutputScale);
+                            const transform = viewerOutputScale !== 1 ? [viewerOutputScale, 0, 0, viewerOutputScale, 0, 0] : null;
+
+                            await page.render({
+                                canvasContext: renderCtx,
+                                transform,
+                                viewport
+                            }).promise;
+
+                            const pdfImg = container.querySelector('.pdf-base-img');
+                            if (pdfImg) pdfImg.src = renderCanvas.toDataURL('image/jpeg', 0.85);
+
+                            await new Promise(r => setTimeout(r, 15));
+                        }
+
+                        renderCanvas.width = 0;
+                        renderCanvas.height = 0;
+                        renderZoom();
+                    };
+
+                    processAllPages();
+
+                }, async function (reason) {
+                    console.error(reason);
+                    const message = reason && reason.message ? reason.message : String(reason || '');
+                    if (message.includes('401')) {
+                        try {
+                            const refreshedToken = await refreshSessionToken();
+                            const retryParams = new URLSearchParams({ file: fileName, user: user, token: refreshedToken });
+                            window.location.replace('viewer.html?' + retryParams.toString());
+                            return;
+                        } catch (refreshError) {
+                            console.error('Session refresh failed', refreshError);
+                            safeStorageClear();
+                            document.getElementById('loader').innerText = 'Session expired. Redirecting to login...';
+                            setTimeout(() => { window.location.href = 'index.html'; }, 1500);
+                            return;
+                        }
+                    }
+                    if (message.includes('403')) {
+                        document.getElementById('loader').innerText = "Access Denied: Your account has been blocked.";
+                    } else {
+                        document.getElementById('loader').innerText = "Failed to load secure document.";
+                    }
+                });
+            } catch (error) {
+                console.error('Viewer startup failed', error);
+                safeStorageClear();
+                document.getElementById('loader').innerText = 'Session expired. Redirecting to login...';
+                setTimeout(() => { window.location.href = 'index.html'; }, 1500);
+            }
+        }
+
+        if (!fileName || !user) {
             document.getElementById('loader').innerText = "Error: Session expired or invalid access. Redirecting to login...";
             setTimeout(() => { window.location.href = 'index.html'; }, 3000);
         } else {
-            const pdfUrl = '/api/document?file=' + encodeURIComponent(fileName) + '&user=' + encodeURIComponent(user) + '&token=' + encodeURIComponent(token);
+            startViewer();
 
-            // Configure PDF.js worker
-            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
-            let pageObserver;
-            let viewObserver;
-
-            const loadingTask = pdfjsLib.getDocument(pdfUrl);
-            loadingTask.promise.then(async function(pdf) {
-                document.getElementById('loader').style.display = 'none';
-
-                // Fetch full Cloud Annotations object for this document
-                let serverAnnotations = {};
-                try {
-                    const annRes = await fetch(`/api/annotations?file=${encodeURIComponent(fileName)}&user=${encodeURIComponent(user)}&token=${encodeURIComponent(token)}`);
-                    if (annRes.ok) serverAnnotations = await annRes.json();
-                } catch(e) { console.error('Cloud load fail', e); }
-
-                // Heartbeat to keep user "Online" on admin dashboard
-                setInterval(() => {
-                    fetch('/api/heartbeat', {
-                        method: 'POST',
-                        headers: {'Content-Type':'application/json'},
-                        body: JSON.stringify({username: user, token: token})
-                    }).catch(()=>{});
-                }, 20000);
-
-                const pageInput = document.getElementById('pageNumberInput');
-                const totalPagesLabel = document.getElementById('totalPagesLabel');
-                totalPagesLabel.innerText = '/ ' + pdf.numPages;
-                pageInput.max = pdf.numPages;
-
-                pageInput.addEventListener('change', () => {
-                    let page = parseInt(pageInput.value);
-                    if (page >= 1 && page <= pdf.numPages) {
-                        const target = document.querySelector(`.page-container[data-page="${page}"]`);
-                        if (target) {
-                            viewerViewport.scrollTo({
-                                top: Math.max(0, target.offsetTop - 20),
-                                left: viewerViewport.scrollLeft,
-                                behavior: 'smooth'
-                            });
-                        }
-                    }
-                });
-
-                // Observer to update page navigation input
-                viewObserver = new IntersectionObserver((entries) => {
-                    entries.forEach(entry => {
-                        if (entry.isIntersecting) {
-                            pageInput.value = entry.target.dataset.page;
-                        }
-                    });
-                }, {
-                    root: viewerViewport,
-                    rootMargin: '-45% 0px -45% 0px'
-                });
-
-                // Sequentially process ALL pages to IMGs to safely bypass iOS Canvas RAM limits
-                const processAllPages = async () => {
-                    const baseScale = 1.5;
-                    viewerOutputScale = Math.min(window.devicePixelRatio || 1, 1.5);
-
-                    const renderCanvas = document.createElement('canvas');
-                    const renderCtx = renderCanvas.getContext('2d');
-
-                    const firstPage = await pdf.getPage(1);
-                    const viewport1 = firstPage.getViewport({scale: baseScale});
-                    basePageWidth = viewport1.width;
-                    globalZoom = fitZoomToViewport();
-
-                    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-                        const container = document.createElement('div');
-                        container.className = 'page-container';
-                        container.dataset.page = pageNum;
-
-                        const pdfImg = document.createElement('img');
-                        pdfImg.className = 'pdf-base-img';
-
-                        const overlayImg = document.createElement('img');
-                        overlayImg.className = 'page-overlay';
-                        overlayImg.style.width = '100%';
-                        overlayImg.style.height = '100%';
-
-                        let savedData = serverAnnotations[pageNum];
-                        const oldStorageKey = `annotation_${user}_${fileName}_p${pageNum}`;
-                        if (!savedData) {
-                            savedData = localStorage.getItem(oldStorageKey);
-                            if (savedData) {
-                                fetch('/api/annotations', {
-                                    method: 'POST',
-                                    headers: {'Content-Type': 'application/json'},
-                                    body: JSON.stringify({ user, pwd, file: fileName, page: pageNum, dataUrl: savedData })
-                                }).catch(()=>{});
-                            }
-                        }
-
-                        if (savedData) overlayImg.src = savedData;
-
-                        setContainerScale(container, viewport1);
-                        container.appendChild(pdfImg);
-                        container.appendChild(overlayImg);
-
-                        document.getElementById('pdf-container').appendChild(container);
-                        viewObserver.observe(container);
-                        setupOnDemandDrawing(container, overlayImg, viewport1, pageNum);
-                    }
-
-                    renderZoom();
-
-                    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-                        const container = document.querySelector(`.page-container[data-page="${pageNum}"]`);
-                        const page = await pdf.getPage(pageNum);
-                        const viewport = page.getViewport({scale: baseScale});
-
-                        if (pageNum === 1) {
-                            setContainerScale(container, viewport);
-                            renderZoom();
-                        } else {
-                            setContainerScale(container, viewport);
-                        }
-
-                        renderCanvas.width = Math.floor(viewport.width * viewerOutputScale);
-                        renderCanvas.height = Math.floor(viewport.height * viewerOutputScale);
-                        const transform = viewerOutputScale !== 1 ? [viewerOutputScale, 0, 0, viewerOutputScale, 0, 0] : null;
-
-                        await page.render({
-                            canvasContext: renderCtx,
-                            transform,
-                            viewport
-                        }).promise;
-
-                        const pdfImg = container.querySelector('.pdf-base-img');
-                        if (pdfImg) pdfImg.src = renderCanvas.toDataURL('image/jpeg', 0.85);
-
-                        await new Promise(r => setTimeout(r, 15));
-                    }
-
-                    renderCanvas.width = 0;
-                    renderCanvas.height = 0;
-                    renderZoom();
-                };
-
-                processAllPages();
-
-            }, function (reason) {
-                console.error(reason);
-                if (reason.message && reason.message.includes('403')) {
-                    document.getElementById('loader').innerText = "Access Denied: Your account has been blocked.";
-                } else {
-                    document.getElementById('loader').innerText = "Failed to load secure document.";
-                }
-            });
-            
             function setupOnDemandDrawing(container, overlayImg, viewport, pageNum) {
                 let activeCanvas = null;
                 let activeCtx = null;

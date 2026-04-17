@@ -595,6 +595,18 @@
             }
         }
 
+        function restoreManualAccessForm() {
+            document.getElementById('username').parentElement.style.display = '';
+            document.getElementById('password').parentElement.style.display = '';
+            document.getElementById('tabLogin').parentElement.style.display = 'flex';
+
+            const welcomeMessage = document.getElementById('welcomeMessage');
+            if (welcomeMessage) welcomeMessage.remove();
+
+            const logoutLink = document.getElementById('logoutLink');
+            if (logoutLink) logoutLink.remove();
+        }
+
         function openModal() {
             modal.classList.add('active');
             document.body.style.overflow = 'hidden';
@@ -636,6 +648,7 @@
                 p.innerText = `Welcome back, ${savedU}!`;
                 
                 const logoutLink = document.createElement('a');
+                logoutLink.id = 'logoutLink';
                 logoutLink.href = "#";
                 logoutLink.innerText = "Not you? Log out";
                 logoutLink.style = "font-size: 0.8rem; color: #d93025; text-decoration: none; display: block; margin-bottom: 1.5rem;";
@@ -686,6 +699,10 @@
 
                     const data = await res.json();
                     if (!data.success) {
+                        if (data.error === 'Invalid credentials or expired session') {
+                            safeStorageClear();
+                            restoreManualAccessForm();
+                        }
                         alert(data.error || 'Error: Account not found or wrong password.');
                         btn.innerText = originalText; btn.disabled = false; return;
                     }

@@ -27,11 +27,16 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            padding: 20px 0; /* Changed */
+            padding: 20px 0;
             transform-origin: top center;
-            transition: transform 0.2s ease, zoom 0.2s ease;
+            transition: transform 0.12s ease-out, zoom 0.12s ease-out;
             margin-top: 60px;
-            /* Removed min-width, min-height padding etc. */
+            will-change: transform;
+            touch-action: pan-y;
+        }
+
+        #pdf-container.pinch-zooming {
+            transition: none;
         }
 
         .page-container {
@@ -199,32 +204,135 @@
         let globalZoom = 1.0;
         const pdfContainer = document.getElementById('pdf-container');
         const zoomLabel = document.getElementById('zoomLabel');
+        const MIN_ZOOM = 0.4;
+        const MAX_ZOOM = 3.0;
+        let pinchState = null;
+        let pinchRaf = null;
 
-        // Dynamically set initial CSS zoom to fit mobile screens perfectly without losing pixel quality
-        const initScrWidth = window.innerWidth - 30;
-        // Typical unscaled PDF width is ~600px.
-        if(initScrWidth < 600) {
-            globalZoom = Math.max(initScrWidth / 600, 0.4); 
-            pdfContainer.style.zoom = globalZoom;
-            pdfContainer.style.transform = `scale(${globalZoom})`; // Fallback
-            if (window.CSS && CSS.supports("zoom", globalZoom.toString())) pdfContainer.style.transform = 'none';
-            zoomLabel.innerText = Math.round(globalZoom * 100) + '%';
+        function clampZoom(value) {
+            return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
         }
+
+        function renderZoom() {
+            const roundedZoom = Math.round(globalZoom * 100) / 100;
+            pdfContainer.style.zoom = roundedZoom;
+            pdfContainer.style.transform = `scale(${roundedZoom})`;
+            if (window.CSS && CSS.supports('zoom', roundedZoom.toString())) pdfContainer.style.transform = 'none';
+            zoomLabel.innerText = Math.round(roundedZoom * 100) + '%';
+        }
+
+        function updateZoom(newZoom) {
+            globalZoom = clampZoom(newZoom);
+            renderZoom();
+        }
+
+        function getTouchDistance(touches) {
+            const dx = touches[0].pageX - touches[1].pageX;
+            const dy = touches[0].pageY - touches[1].pageY;
+            return Math.hypot(dx, dy);
+        }
+
+        function schedulePinchZoom(nextZoom) {
+            pinchState.pendingZoom = clampZoom(nextZoom);
+            if (pinchRaf) return;
+            pinchRaf = requestAnimationFrame(() => {
+                pinchRaf = null;
+                if (!pinchState) return;
+                globalZoom = pinchState.pendingZoom;
+                renderZoom();
+            });
+        }
+
+        function beginPinchZoom(touches) {
+            pinchState = {
+                startDistance: getTouchDistance(touches),
+                startZoom: globalZoom,
+                pendingZoom: globalZoom
+            };
+            pdfContainer.classList.add('pinch-zooming');
+        }
+
+        function movePinchZoom(touches) {
+            if (!pinchState) return;
+            const distance = getTouchDistance(touches);
+            if (!distance || !pinchState.startDistance) return;
+            const scale = distance / pinchState.startDistance;
+            schedulePinchZoom(pinchState.startZoom * scale);
+        }
+
+        function endPinchZoom() {
+            if (pinchRaf) {
+                cancelAnimationFrame(pinchRaf);
+                pinchRaf = null;
+            }
+            if (pinchState) {
+                globalZoom = pinchState.pendingZoom;
+                renderZoom();
+            }
+            pinchState = null;
+            pdfContainer.classList.remove('pinch-zooming');
+        }
+
+        const initScrWidth = window.innerWidth - 30;
+        if (initScrWidth < 600) {
+            globalZoom = clampZoom(initScrWidth / 600);
+        }
+        renderZoom();
 
         document.getElementById('zoomInBtn').addEventListener('click', () => {
-            if (globalZoom < 3.0) updateZoom(globalZoom + 0.2);
+            if (globalZoom < MAX_ZOOM) updateZoom(globalZoom + 0.2);
         });
         document.getElementById('zoomOutBtn').addEventListener('click', () => {
-            if (globalZoom > 0.4) updateZoom(globalZoom - 0.2);
+            if (globalZoom > MIN_ZOOM) updateZoom(globalZoom - 0.2);
         });
-        function updateZoom(newZoom) {
-            globalZoom = newZoom;
-            pdfContainer.style.zoom = globalZoom;
-            pdfContainer.style.transform = `scale(${globalZoom})`; // Fallback
-            // If safari zoom works natively (iOS), strip transform to allow structural scrollbars
-            if (window.CSS && CSS.supports("zoom", globalZoom.toString())) pdfContainer.style.transform = 'none';
-            zoomLabel.innerText = Math.round(globalZoom * 100) + '%';
+
+        pdfContainer.addEventListener('touchstart', (e) => {
+            if (isDrawMode) return;
+            if (e.touches.length === 2) {
+                e.preventDefault();
+                beginPinchZoom(e.touches);
+            }
+        }, { passive: false });
+
+        pdfContainer.addEventListener('touchmove', (e) => {
+            if (!pinchState || isDrawMode) return;
+            if (e.touches.length === 2) {
+                e.preventDefault();
+                movePinchZoom(e.touches);
+            }
+        }, { passive: false });
+
+        pdfContainer.addEventListener('touchend', () => {
+            if (pinchState) endPinchZoom();
+        });
+
+        pdfContainer.addEventListener('touchcancel', () => {
+            if (pinchState) endPinchZoom();
+        });
+
+        window.addEventListener('resize', () => {
+            if (!pinchState) renderZoom();
+        });
+
+        document.addEventListener('gesturestart', (e) => {
+            if (!isDrawMode) e.preventDefault();
+        }, { passive: false });
+
+        document.addEventListener('gesturechange', (e) => {
+            if (!isDrawMode) e.preventDefault();
+        }, { passive: false });
+
+        document.addEventListener('gestureend', (e) => {
+            if (!isDrawMode) e.preventDefault();
+        }, { passive: false });
+
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', () => {
+                if (!pinchState) renderZoom();
+            });
         }
+
+        document.documentElement.style.touchAction = 'manipulation';
 
         // Draw State
         let isDrawMode = false;
@@ -442,8 +550,9 @@
 
                 function startDraw(e) {
                     if (!isDrawMode) return;
+                    if (e.touches && e.touches.length !== 1) return;
                     e.preventDefault();
-                    
+
                     // Awaken heavy hardware canvas just for drawing context
                     activeCanvas = document.createElement('canvas');
                     activeCanvas.className = 'page-overlay';
@@ -474,6 +583,7 @@
 
                 function draw(e) {
                     if (!isDrawing || !isDrawMode || !activeCtx) return;
+                    if (e.touches && e.touches.length !== 1) return;
                     e.preventDefault();
                     const pos = getPos(e);
 

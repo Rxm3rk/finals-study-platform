@@ -536,7 +536,7 @@
             const response = await fetch('/api/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: user, password: savedPassword, pdfVersion: fileName })
+                body: JSON.stringify({ username: user, password: savedPassword, pdfVersion: fileName, silentRefresh: true })
             });
 
             const data = await response.json();
@@ -565,11 +565,40 @@
             };
         }
 
+        let closeSignalSent = false;
+
+        function sendCloseSignal(activeToken) {
+            if (closeSignalSent || !user || !activeToken) return;
+            closeSignalSent = true;
+
+            const payload = JSON.stringify({
+                username: user,
+                token: activeToken,
+                pdfVersion: fileName
+            });
+
+            if (navigator.sendBeacon) {
+                const beacon = new Blob([payload], { type: 'application/json' });
+                navigator.sendBeacon('/api/presence/close', beacon);
+                return;
+            }
+
+            fetch('/api/presence/close', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: payload,
+                keepalive: true
+            }).catch(() => {});
+        }
+
         async function startViewer() {
             try {
                 const session = await buildViewerSession();
                 const activeToken = session.token;
                 const pdfUrl = session.pdfUrl;
+
+                window.addEventListener('pagehide', () => sendCloseSignal(activeToken));
+                window.addEventListener('beforeunload', () => sendCloseSignal(activeToken));
 
                 // Configure PDF.js worker
                 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';

@@ -62,6 +62,20 @@ try {
     console.error('[ERROR] Volume write test: FAILED. Persistence will crash.', e);
 }
 
+function updateUserActivity(user, ipAddress) {
+    user.lastOnline = Date.now();
+    user.ip = ipAddress;
+}
+
+function appendAccessLog(entry) {
+    const dbData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    dbData.push({
+        timestamp: new Date().toISOString(),
+        ...entry
+    });
+    fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2));
+}
+
 const server = http.createServer((req, res) => {
     try {
         // CORS headers just in case
@@ -103,13 +117,15 @@ const server = http.createServer((req, res) => {
                     res.writeHead(400, { 'Content-Type': 'application/json' });
                     return res.end(JSON.stringify({ success: false, error: 'Username already exists' }));
                 }
-                users.push({
+                const newUser = {
                     username: data.username,
                     password: data.password, // Simple persistence
                     createdAt: new Date().toISOString(),
                     lastOnline: Date.now(),
                     ip: clientIp
-                });
+                };
+                updateUserActivity(newUser, clientIp);
+                users.push(newUser);
                 fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: true }));
@@ -139,23 +155,20 @@ const server = http.createServer((req, res) => {
                     return res.end(JSON.stringify({ success: false, error: 'Invalid credentials or expired session' }));
                 }
                 
-                user.lastOnline = Date.now();
-                user.ip = clientIp;
+                updateUserActivity(user, clientIp);
 
                 if (pathname === '/api/login') {
                     // Generate a new session token on each fresh login to prevent concurrent sharing
                     user.token = require('crypto').randomBytes(16).toString('hex');
-                    
-                    if (data.pdfVersion) {
-                        const dbData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-                        dbData.push({
+                    const shouldLogLogin = data.pdfVersion && !data.silentRefresh;
+
+                    if (shouldLogLogin) {
+                        appendAccessLog({
                             username: data.username,
                             pdfVersion: data.pdfVersion,
-                            timestamp: new Date().toISOString(),
                             ip: clientIp,
                             action: 'login'
                         });
-                        fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2));
                     }
                     fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
                     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -167,6 +180,39 @@ const server = http.createServer((req, res) => {
                 }
             } catch (err) {
                 res.writeHead(400); res.end('Invalid request');
+            }
+        });
+        return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/presence/close') {
+        let body = '';
+        req.on('data', chunk => body += chunk.toString());
+        req.on('end', () => {
+            try {
+                const data = body ? JSON.parse(body) : {};
+                const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+                const user = users.find(u => u.username === data.username && u.token === data.token);
+
+                if (!user) {
+                    res.writeHead(401, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'Invalid session' }));
+                }
+
+                updateUserActivity(user, clientIp);
+                fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+                appendAccessLog({
+                    username: data.username,
+                    pdfVersion: data.pdfVersion || null,
+                    ip: clientIp,
+                    action: 'viewer_closed'
+                });
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+            } catch (err) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, error: 'Invalid request' }));
             }
         });
         return;
@@ -406,20 +452,16 @@ const server = http.createServer((req, res) => {
             }
 
             // Update user status
-            userData.lastOnline = Date.now();
-            userData.ip = clientIp;
+            updateUserActivity(userData, clientIp);
             fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
 
             // Log access to DB_FILE
-            const dbData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-            dbData.push({
+            appendAccessLog({
                 username: user,
                 pdfVersion: file,
-                timestamp: new Date().toISOString(),
                 ip: clientIp,
                 action: 'open_document'
             });
-            fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2));
 
         } catch(e) {
             console.error('Auth check error:', e);

@@ -169,6 +169,7 @@
                     <th>PDF Accessed</th>
                     <th>IP Address</th>
                     <th>Action</th>
+                    <th>Controls</th>
                 </tr>
             </thead>
             <tbody id="logs-body">
@@ -178,6 +179,103 @@
     </div>
 
     <script>
+        let adminData = null;
+        let dashboardRefreshTimer = null;
+
+        function formatLastSeen(lastOnline) {
+            const mins = Math.floor((Date.now() - lastOnline) / 60000);
+            if (mins < 1) return 'Just now';
+            if (mins > 1440) return `${Math.floor(mins / 1440)} days ago`;
+            if (mins > 60) return `${Math.floor(mins / 60)} hrs ago`;
+            return `${mins} min ago`;
+        }
+
+        function renderUsersAndPresence(data) {
+            const usersList = document.getElementById('users-list');
+            if (data.users && data.users.length > 0) {
+                usersList.innerHTML = data.users.map(u => {
+                    const seenText = formatLastSeen(u.lastOnline);
+                    const isBlocked = data.blocked && (data.blocked.includes(u.ip) || data.blocked.includes(u.username));
+                    const btn = isBlocked ?
+                        `<button onclick="unban('${u.username}')" style="padding:4px 8px; font-size:0.75rem; background:#6c757d; border-radius:4px;">Unban</button>` :
+                        `<button onclick="banUser('${u.username}')" style="padding:4px 8px; font-size:0.75rem; background:#dc3545; border-radius:4px;">Ban IP</button>`;
+
+                    return `<div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center; background:#fbfbfb; padding:8px; border-radius:6px; border:1px solid #eee;">
+                        <div>
+                            <strong style="color:#222;">${u.username}</strong>
+                            <span style="font-size:0.75rem; color:#888;">(${u.ip || 'No IP'})</span>
+                            <br><span style="font-size:0.8rem; color:#555;">last seen: ${seenText}</span>
+                            ${isBlocked ? '<span class="blocked-badge" style="margin-left: 5px;">BANNED</span>' : ''}
+                        </div>
+                        <div>
+                            ${btn}
+                            <button onclick="deleteUser('${u.username}')" style="padding:4px 8px; font-size:0.75rem; background:#333; border-radius:4px; margin-left:4px;">Delete User</button>
+                        </div>
+                    </div>`;
+                }).join('');
+            } else {
+                usersList.innerHTML = "No users found.";
+            }
+
+            const onlineList = document.getElementById('online-list');
+            if (data.users && data.users.length > 0) {
+                const now = Date.now();
+                const onlineUsers = data.users.filter(u => (now - u.lastOnline) < 60000);
+                if (onlineUsers.length > 0) {
+                    onlineList.innerHTML = onlineUsers.map(u => `<span class="online-badge"><span class="online-dot"></span>${u.username}</span>`).join('');
+                } else {
+                    onlineList.innerHTML = "<span style='color: #888;'>Nobody is currently active.</span>";
+                }
+            } else {
+                onlineList.innerHTML = "<span style='color: #888;'>No registered users yet.</span>";
+            }
+        }
+
+        function renderLogs(data) {
+            const tbody = document.getElementById('logs-body');
+            tbody.innerHTML = '';
+
+            if (data.database && data.database.length > 0) {
+                const reversedDb = [...data.database].reverse();
+                reversedDb.forEach(log => {
+                    const tr = document.createElement('tr');
+                    const dateObj = new Date(log.timestamp);
+                    const cleanTime = dateObj.toLocaleString();
+
+                    tr.innerHTML = `
+                        <td style="color: #666; font-size: 0.85rem;">${cleanTime}</td>
+                        <td style="font-weight: 600;">${log.username}</td>
+                        <td>${log.pdfVersion || 'N/A'}</td>
+                        <td>${log.ip || 'N/A'}</td>
+                        <td>${log.action || 'access'}</td>
+                        <td><button onclick="deleteLog('${log.timestamp}', '${log.username}')" style="padding: 4px 10px; font-size: 0.75rem; background: #dc3545;">Delete</button></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } else {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #888;">No access logs found yet.</td></tr>';
+            }
+        }
+
+        function renderDashboard() {
+            if (!adminData) return;
+            renderUsersAndPresence(adminData);
+            renderLogs(adminData);
+        }
+
+        async function refreshAdminSnapshot() {
+            const pwd = document.getElementById('pwd').value;
+            if (!pwd) return;
+
+            const res = await fetch('/api/admin?pwd=' + encodeURIComponent(pwd));
+            if (!res.ok) {
+                throw new Error('Failed to refresh admin data');
+            }
+
+            adminData = await res.json();
+            renderDashboard();
+        }
+
         async function loadData() {
             const pwd = document.getElementById('pwd').value;
             if (!pwd) return;
@@ -191,81 +289,16 @@
                     return;
                 }
 
-                const data = await res.json();
-                
+                adminData = await res.json();
+
                 document.getElementById('login-section').style.display = 'none';
                 document.getElementById('dashboard').style.display = 'block';
+                renderDashboard();
 
-                // Render Registered Users and Offline Tracker
-                const usersList = document.getElementById('users-list');
-                if (data.users && data.users.length > 0) {
-                    usersList.innerHTML = data.users.map(u => {
-                        const mins = Math.floor((Date.now() - u.lastOnline) / 60000);
-                        let seenText = `${mins} min ago`;
-                        if (mins < 1) seenText = 'Just now';
-                        else if (mins > 1440) seenText = `${Math.floor(mins / 1440)} days ago`;
-                        else if (mins > 60) seenText = `${Math.floor(mins / 60)} hrs ago`;
-                        
-                        const isBlocked = data.blocked && (data.blocked.includes(u.ip) || data.blocked.includes(u.username));
-                        const btn = isBlocked ? 
-                            `<button onclick="unban('${u.username}')" style="padding:4px 8px; font-size:0.75rem; background:#6c757d; border-radius:4px;">Unban</button>` :
-                            `<button onclick="banUser('${u.username}')" style="padding:4px 8px; font-size:0.75rem; background:#dc3545; border-radius:4px;">Ban IP</button>`;
-
-                        return `<div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center; background:#fbfbfb; padding:8px; border-radius:6px; border:1px solid #eee;">
-                            <div>
-                                <strong style="color:#222;">${u.username}</strong>
-                                <span style="font-size:0.75rem; color:#888;">(${u.ip || 'No IP'})</span>
-                                <br><span style="font-size:0.8rem; color:#555;">last seen: ${seenText}</span>
-                                ${isBlocked ? '<span class="blocked-badge" style="margin-left: 5px;">BANNED</span>' : ''}
-                            </div>
-                            <div>
-                                ${btn}
-                                <button onclick="deleteUser('${u.username}')" style="padding:4px 8px; font-size:0.75rem; background:#333; border-radius:4px; margin-left:4px;">Delete User</button>
-                            </div>
-                        </div>`;
-                    }).join('');
-                } else {
-                    usersList.innerHTML = "No users found.";
-                }
-
-                // Render Live Online Users Matrix (60 seconds buffer)
-                const onlineList = document.getElementById('online-list');
-                if (data.users && data.users.length > 0) {
-                    const now = Date.now();
-                    const onlineUsers = data.users.filter(u => (now - u.lastOnline) < 60000);
-                    if (onlineUsers.length > 0) {
-                        onlineList.innerHTML = onlineUsers.map(u => `<span class="online-badge"><span class="online-dot"></span>${u.username}</span>`).join('');
-                    } else {
-                        onlineList.innerHTML = "<span style='color: #888;'>Nobody is currently active.</span>";
-                    }
-                } else {
-                    onlineList.innerHTML = "<span style='color: #888;'>No registered users yet.</span>";
-                }
-
-                // Render DB Logs
-                const tbody = document.getElementById('logs-body');
-                tbody.innerHTML = '';
-                
-                if (data.database && data.database.length > 0) {
-                    // Reverse to show newest first
-                    const reversedDb = [...data.database].reverse();
-                    reversedDb.forEach(log => {
-                        const tr = document.createElement('tr');
-                        const dateObj = new Date(log.timestamp);
-                        const cleanTime = dateObj.toLocaleString();
-
-                        tr.innerHTML = `
-                            <td style="color: #666; font-size: 0.85rem;">${cleanTime}</td>
-                            <td style="font-weight: 600;">${log.username}</td>
-                            <td>${log.pdfVersion}</td>
-                            <td>${log.ip || 'N/A'}</td>
-                            <td><button onclick="deleteLog('${log.timestamp}', '${log.username}')" style="padding: 4px 10px; font-size: 0.75rem; background: #dc3545;">Delete</button></td>
-                        `;
-                        tbody.appendChild(tr);
-                    });
-                } else {
-                    tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: #888;">No access logs found yet.</td></tr>';
-                }
+                if (dashboardRefreshTimer) clearInterval(dashboardRefreshTimer);
+                dashboardRefreshTimer = setInterval(() => {
+                    refreshAdminSnapshot().catch(e => console.error('Dashboard refresh failed', e));
+                }, 5000);
 
             } catch(e) {
                 document.getElementById('error-msg').innerText = "Server Error. Are you running the server?";

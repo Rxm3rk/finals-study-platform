@@ -76,6 +76,75 @@ function appendAccessLog(entry) {
     fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2));
 }
 
+function getAnnotationStorageFile(user, file) {
+    return path.basename(user) + '_' + path.basename(file) + '.json';
+}
+
+function getAnnotationPath(user, file) {
+    return path.join(ANNOTATIONS_DIR, getAnnotationStorageFile(user, file));
+}
+
+function readAnnotationMapFromPath(annotationPath) {
+    if (!fs.existsSync(annotationPath)) {
+        return {};
+    }
+
+    return JSON.parse(fs.readFileSync(annotationPath, 'utf8'));
+}
+
+function getAdminPassword() {
+    return process.env.ADMIN_PASSWORD || 'rxm3rk_admin';
+}
+
+function parseStoredAnnotationName(storageFile, users) {
+    const baseName = storageFile.replace(/\.json$/i, '');
+    const sortedUsers = [...users].sort((a, b) => b.username.length - a.username.length);
+
+    for (const user of sortedUsers) {
+        const prefix = `${user.username}_`;
+        if (baseName.startsWith(prefix)) {
+            return {
+                user: user.username,
+                file: baseName.slice(prefix.length),
+                storageFile
+            };
+        }
+    }
+
+    return {
+        user: 'Unknown',
+        file: baseName,
+        storageFile
+    };
+}
+
+function listAnnotationSummaries(users) {
+    if (!fs.existsSync(ANNOTATIONS_DIR)) {
+        return [];
+    }
+
+    return fs.readdirSync(ANNOTATIONS_DIR)
+        .filter(name => name.toLowerCase().endsWith('.json'))
+        .map(storageFile => {
+            const annotationPath = path.join(ANNOTATIONS_DIR, storageFile);
+            const annotationMap = readAnnotationMapFromPath(annotationPath);
+            const pages = Object.keys(annotationMap)
+                .map(page => Number(page))
+                .filter(page => Number.isFinite(page))
+                .sort((a, b) => a - b);
+            const annotationInfo = parseStoredAnnotationName(storageFile, users);
+            const stats = fs.statSync(annotationPath);
+
+            return {
+                ...annotationInfo,
+                pageCount: pages.length,
+                pages,
+                updatedAt: stats.mtime.toISOString()
+            };
+        })
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+}
+
 const server = http.createServer((req, res) => {
     try {
         // CORS headers just in case
@@ -228,13 +297,8 @@ const server = http.createServer((req, res) => {
             res.writeHead(401); return res.end('Unauthorized');
         }
 
-        const safeFilename = path.basename(user) + '_' + path.basename(file) + '.json';
-        const annPath = path.join(ANNOTATIONS_DIR, safeFilename);
-
-        let annotations = {};
-        if (fs.existsSync(annPath)) {
-            annotations = JSON.parse(fs.readFileSync(annPath, 'utf8'));
-        }
+        const annPath = getAnnotationPath(user, file);
+        const annotations = readAnnotationMapFromPath(annPath);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(annotations));
         return;
@@ -251,14 +315,9 @@ const server = http.createServer((req, res) => {
                     res.writeHead(401); return res.end('Unauthorized');
                 }
 
-                const safeFilename = path.basename(data.user) + '_' + path.basename(data.file) + '.json';
-                const annPath = path.join(ANNOTATIONS_DIR, safeFilename);
+                const annPath = getAnnotationPath(data.user, data.file);
+                const annotations = readAnnotationMapFromPath(annPath);
 
-                let annotations = {};
-                if (fs.existsSync(annPath)) {
-                    annotations = JSON.parse(fs.readFileSync(annPath, 'utf8'));
-                }
-                
                 annotations[data.page] = data.dataUrl;
                 fs.writeFileSync(annPath, JSON.stringify(annotations));
                 res.writeHead(200); res.end();
@@ -271,8 +330,8 @@ const server = http.createServer((req, res) => {
 
     if (req.method === 'GET' && pathname === '/api/admin') {
         const pwd = parsedUrl.searchParams.get('pwd');
-        const adminPassword = process.env.ADMIN_PASSWORD || 'rxm3rk_admin';
-        
+        const adminPassword = getAdminPassword();
+
         if (pwd !== adminPassword) {
             res.writeHead(401);
             return res.end('Unauthorized');
@@ -281,16 +340,53 @@ const server = http.createServer((req, res) => {
         try {
             const dbData = fs.readFileSync(DB_FILE, 'utf8');
             const blockedData = fs.readFileSync(BLOCKED_FILE, 'utf8');
-            const usersData = fs.readFileSync(USERS_FILE, 'utf8');
+            const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ 
-                database: JSON.parse(dbData), 
+            res.end(JSON.stringify({
+                database: JSON.parse(dbData),
                 blocked: JSON.parse(blockedData),
-                users: JSON.parse(usersData)
+                users,
+                annotations: listAnnotationSummaries(users)
             }));
         } catch(e) {
             res.writeHead(500);
             res.end(JSON.stringify({ error: 'Database read error' }));
+        }
+        return;
+    }
+
+    if (req.method === 'GET' && pathname === '/api/admin/annotations') {
+        const pwd = parsedUrl.searchParams.get('pwd');
+        const user = parsedUrl.searchParams.get('user');
+        const file = parsedUrl.searchParams.get('file');
+        const adminPassword = getAdminPassword();
+
+        if (pwd !== adminPassword) {
+            res.writeHead(401);
+            return res.end('Unauthorized');
+        }
+
+        if (!user || !file) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Missing annotation target' }));
+        }
+
+        try {
+            const annotationMap = readAnnotationMapFromPath(getAnnotationPath(user, file));
+            const pages = Object.keys(annotationMap)
+                .map(page => Number(page))
+                .filter(page => Number.isFinite(page))
+                .sort((a, b) => a - b)
+                .map(page => ({
+                    page,
+                    dataUrl: annotationMap[String(page)]
+                }));
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ user, file, pages }));
+        } catch (e) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Annotation read error' }));
         }
         return;
     }

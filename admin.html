@@ -129,6 +129,54 @@
             display: inline-flex;
             align-items: center;
         }
+
+        .annotation-card {
+            border: 1px solid #eee;
+            border-radius: 10px;
+            padding: 1rem;
+            background: #fcfcfc;
+            margin-bottom: 1rem;
+        }
+
+        .annotation-meta {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .annotation-preview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 12px;
+            margin-top: 1rem;
+        }
+
+        .annotation-preview-tile {
+            border: 1px solid #eee;
+            border-radius: 8px;
+            background: #fff;
+            padding: 0.75rem;
+        }
+
+        .annotation-preview-surface {
+            background: linear-gradient(45deg, #f7f7f7 25%, transparent 25%), linear-gradient(-45deg, #f7f7f7 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f7f7f7 75%), linear-gradient(-45deg, transparent 75%, #f7f7f7 75%);
+            background-size: 16px 16px;
+            background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+            border-radius: 6px;
+            padding: 8px;
+            min-height: 110px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .annotation-preview-surface img {
+            max-width: 100%;
+            max-height: 140px;
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -160,6 +208,11 @@
 
         <hr style="border: none; border-top: 1px solid #eee; margin: 2rem 0;">
 
+        <h3>Saved Annotations</h3>
+        <div id="annotations-list" style="margin-top: 1rem;">Loading...</div>
+
+        <hr style="border: none; border-top: 1px solid #eee; margin: 2rem 0;">
+
         <h3>Access History</h3>
         <table>
             <thead>
@@ -181,6 +234,8 @@
     <script>
         let adminData = null;
         let dashboardRefreshTimer = null;
+        const annotationPreviewCache = new Map();
+        const annotationOpenState = new Set();
 
         function formatLastSeen(lastOnline) {
             const mins = Math.floor((Date.now() - lastOnline) / 60000);
@@ -190,6 +245,27 @@
             return `${mins} min ago`;
         }
 
+        function escapeHtml(value) {
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function buildAnnotationKey(user, file) {
+            return `${user}::${file}`;
+        }
+
+        function buildAnnotationVersion(annotation) {
+            return annotation ? `${annotation.updatedAt || ''}|${annotation.pageCount || 0}` : '';
+        }
+
+        function getAnnotationSummary(user, file) {
+            return (adminData?.annotations || []).find(annotation => annotation.user === user && annotation.file === file) || null;
+        }
+
         function renderUsersAndPresence(data) {
             const usersList = document.getElementById('users-list');
             if (data.users && data.users.length > 0) {
@@ -197,19 +273,19 @@
                     const seenText = formatLastSeen(u.lastOnline);
                     const isBlocked = data.blocked && (data.blocked.includes(u.ip) || data.blocked.includes(u.username));
                     const btn = isBlocked ?
-                        `<button onclick="unban('${u.username}')" style="padding:4px 8px; font-size:0.75rem; background:#6c757d; border-radius:4px;">Unban</button>` :
-                        `<button onclick="banUser('${u.username}')" style="padding:4px 8px; font-size:0.75rem; background:#dc3545; border-radius:4px;">Ban IP</button>`;
+                        `<button onclick='unban(${JSON.stringify(u.username)})' style="padding:4px 8px; font-size:0.75rem; background:#6c757d; border-radius:4px;">Unban</button>` :
+                        `<button onclick='banUser(${JSON.stringify(u.username)})' style="padding:4px 8px; font-size:0.75rem; background:#dc3545; border-radius:4px;">Ban IP</button>`;
 
                     return `<div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center; background:#fbfbfb; padding:8px; border-radius:6px; border:1px solid #eee;">
                         <div>
-                            <strong style="color:#222;">${u.username}</strong>
-                            <span style="font-size:0.75rem; color:#888;">(${u.ip || 'No IP'})</span>
+                            <strong style="color:#222;">${escapeHtml(u.username)}</strong>
+                            <span style="font-size:0.75rem; color:#888;">(${escapeHtml(u.ip || 'No IP')})</span>
                             <br><span style="font-size:0.8rem; color:#555;">last seen: ${seenText}</span>
                             ${isBlocked ? '<span class="blocked-badge" style="margin-left: 5px;">BANNED</span>' : ''}
                         </div>
                         <div>
                             ${btn}
-                            <button onclick="deleteUser('${u.username}')" style="padding:4px 8px; font-size:0.75rem; background:#333; border-radius:4px; margin-left:4px;">Delete User</button>
+                            <button onclick='deleteUser(${JSON.stringify(u.username)})' style="padding:4px 8px; font-size:0.75rem; background:#333; border-radius:4px; margin-left:4px;">Delete User</button>
                         </div>
                     </div>`;
                 }).join('');
@@ -222,13 +298,64 @@
                 const now = Date.now();
                 const onlineUsers = data.users.filter(u => (now - u.lastOnline) < 60000);
                 if (onlineUsers.length > 0) {
-                    onlineList.innerHTML = onlineUsers.map(u => `<span class="online-badge"><span class="online-dot"></span>${u.username}</span>`).join('');
+                    onlineList.innerHTML = onlineUsers.map(u => `<span class="online-badge"><span class="online-dot"></span>${escapeHtml(u.username)}</span>`).join('');
                 } else {
                     onlineList.innerHTML = "<span style='color: #888;'>Nobody is currently active.</span>";
                 }
             } else {
                 onlineList.innerHTML = "<span style='color: #888;'>No registered users yet.</span>";
             }
+        }
+
+        function renderAnnotations(data) {
+            const annotationsList = document.getElementById('annotations-list');
+            const annotations = data.annotations || [];
+
+            if (!annotations.length) {
+                annotationsList.innerHTML = "<span style='color: #888;'>No saved annotations found.</span>";
+                return;
+            }
+
+            annotationsList.innerHTML = annotations.map(annotation => {
+                const annotationKey = buildAnnotationKey(annotation.user, annotation.file);
+                const isOpen = annotationOpenState.has(annotationKey);
+                const previewState = annotationPreviewCache.get(annotationKey);
+                const lastUpdated = annotation.updatedAt ? new Date(annotation.updatedAt).toLocaleString() : 'Unknown';
+                let previewMarkup = '';
+
+                if (isOpen) {
+                    if (previewState?.loading) {
+                        previewMarkup = '<div style="margin-top: 1rem; color: #666;">Loading previews...</div>';
+                    } else if (previewState?.error) {
+                        previewMarkup = `<div style="margin-top: 1rem; color: #d10000;">${escapeHtml(previewState.error)}</div>`;
+                    } else if (previewState?.pages?.length) {
+                        previewMarkup = `<div class="annotation-preview-grid">${previewState.pages.map(page => `
+                            <div class="annotation-preview-tile">
+                                <div style="font-size: 0.78rem; font-weight: 600; margin-bottom: 0.5rem; color: #555;">Page ${page.page}</div>
+                                <div class="annotation-preview-surface">
+                                    <img src="${page.dataUrl}" alt="Annotation preview for page ${page.page}">
+                                </div>
+                            </div>
+                        `).join('')}</div>`;
+                    } else {
+                        previewMarkup = '<div style="margin-top: 1rem; color: #888;">No saved preview pages found.</div>';
+                    }
+                }
+
+                return `
+                    <div class="annotation-card">
+                        <div class="annotation-meta">
+                            <div>
+                                <div style="font-weight: 600; color: #222;">${escapeHtml(annotation.user)}</div>
+                                <div style="font-size: 0.9rem; color: #555; margin-top: 0.15rem;">${escapeHtml(annotation.file)}</div>
+                                <div style="font-size: 0.8rem; color: #888; margin-top: 0.35rem;">${annotation.pageCount} annotated page${annotation.pageCount === 1 ? '' : 's'} · Updated ${lastUpdated}</div>
+                            </div>
+                            <button onclick='toggleAnnotationPreview(${JSON.stringify(annotation.user)}, ${JSON.stringify(annotation.file)})'>${isOpen ? 'Hide previews' : 'View previews'}</button>
+                        </div>
+                        ${isOpen ? previewMarkup : ''}
+                    </div>
+                `;
+            }).join('');
         }
 
         function renderLogs(data) {
@@ -244,11 +371,11 @@
 
                     tr.innerHTML = `
                         <td style="color: #666; font-size: 0.85rem;">${cleanTime}</td>
-                        <td style="font-weight: 600;">${log.username}</td>
-                        <td>${log.pdfVersion || 'N/A'}</td>
-                        <td>${log.ip || 'N/A'}</td>
-                        <td>${log.action || 'access'}</td>
-                        <td><button onclick="deleteLog('${log.timestamp}', '${log.username}')" style="padding: 4px 10px; font-size: 0.75rem; background: #dc3545;">Delete</button></td>
+                        <td style="font-weight: 600;">${escapeHtml(log.username)}</td>
+                        <td>${escapeHtml(log.pdfVersion || 'N/A')}</td>
+                        <td>${escapeHtml(log.ip || 'N/A')}</td>
+                        <td>${escapeHtml(log.action || 'access')}</td>
+                        <td><button onclick='deleteLog(${JSON.stringify(log.timestamp)}, ${JSON.stringify(log.username)})' style="padding: 4px 10px; font-size: 0.75rem; background: #dc3545;">Delete</button></td>
                     `;
                     tbody.appendChild(tr);
                 });
@@ -260,7 +387,87 @@
         function renderDashboard() {
             if (!adminData) return;
             renderUsersAndPresence(adminData);
+            renderAnnotations(adminData);
             renderLogs(adminData);
+        }
+
+        async function loadAnnotationPreview(user, file) {
+            const annotationKey = buildAnnotationKey(user, file);
+            const pwd = document.getElementById('pwd').value;
+            const annotationSummary = getAnnotationSummary(user, file);
+            annotationPreviewCache.set(annotationKey, { loading: true, pages: [], version: buildAnnotationVersion(annotationSummary) });
+            renderDashboard();
+
+            try {
+                const res = await fetch(`/api/admin/annotations?pwd=${encodeURIComponent(pwd)}&user=${encodeURIComponent(user)}&file=${encodeURIComponent(file)}`);
+                if (!res.ok) {
+                    throw new Error('Failed to load annotation previews');
+                }
+
+                const data = await res.json();
+                annotationPreviewCache.set(annotationKey, {
+                    loading: false,
+                    pages: data.pages || [],
+                    version: buildAnnotationVersion(getAnnotationSummary(user, file))
+                });
+            } catch (e) {
+                annotationPreviewCache.set(annotationKey, {
+                    loading: false,
+                    pages: [],
+                    error: 'Unable to load previews.',
+                    version: buildAnnotationVersion(annotationSummary)
+                });
+            }
+
+            renderDashboard();
+        }
+
+        function toggleAnnotationPreview(user, file) {
+            const annotationKey = buildAnnotationKey(user, file);
+            if (annotationOpenState.has(annotationKey)) {
+                annotationOpenState.delete(annotationKey);
+                renderDashboard();
+                return;
+            }
+
+            annotationOpenState.add(annotationKey);
+            const cached = annotationPreviewCache.get(annotationKey);
+            if (!cached) {
+                loadAnnotationPreview(user, file);
+                return;
+            }
+
+            renderDashboard();
+        }
+
+        function syncAnnotationPreviewCache(data) {
+            const annotationKeys = new Set();
+
+            (data.annotations || []).forEach(annotation => {
+                const annotationKey = buildAnnotationKey(annotation.user, annotation.file);
+                const nextVersion = buildAnnotationVersion(annotation);
+                const cached = annotationPreviewCache.get(annotationKey);
+                annotationKeys.add(annotationKey);
+
+                if (cached && cached.version && cached.version !== nextVersion) {
+                    annotationPreviewCache.delete(annotationKey);
+                    if (annotationOpenState.has(annotationKey)) {
+                        loadAnnotationPreview(annotation.user, annotation.file);
+                    }
+                }
+            });
+
+            Array.from(annotationPreviewCache.keys()).forEach(annotationKey => {
+                if (!annotationKeys.has(annotationKey)) {
+                    annotationPreviewCache.delete(annotationKey);
+                }
+            });
+
+            Array.from(annotationOpenState).forEach(annotationKey => {
+                if (!annotationKeys.has(annotationKey)) {
+                    annotationOpenState.delete(annotationKey);
+                }
+            });
         }
 
         async function refreshAdminSnapshot() {
@@ -273,6 +480,7 @@
             }
 
             adminData = await res.json();
+            syncAnnotationPreviewCache(adminData);
             renderDashboard();
         }
 
@@ -290,6 +498,7 @@
                 }
 
                 adminData = await res.json();
+                syncAnnotationPreviewCache(adminData);
 
                 document.getElementById('login-section').style.display = 'none';
                 document.getElementById('dashboard').style.display = 'block';
@@ -314,7 +523,7 @@
                     method: 'DELETE'
                 });
                 if (res.ok) {
-                    loadData(); // Refresh UI
+                    loadData();
                 } else {
                     alert("Failed to delete the log.");
                 }

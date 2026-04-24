@@ -159,16 +159,19 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(255, 255, 255, 0.85);
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
+            background:
+                radial-gradient(circle at 50% 10%, rgba(219, 234, 254, 0.62), transparent 36%),
+                rgba(248, 250, 252, 0.64);
+            backdrop-filter: blur(18px) saturate(180%);
+            -webkit-backdrop-filter: blur(18px) saturate(180%);
             display: flex;
             justify-content: center;
             align-items: center;
             opacity: 0;
             visibility: hidden;
-            transition: opacity 0.3s ease, visibility 0.3s ease;
+            transition: opacity 0.28s ease, visibility 0.28s ease;
             z-index: 1000;
+            padding: 1.25rem;
         }
 
         .modal-overlay.active {
@@ -177,48 +180,58 @@
         }
 
         .modal {
-            background: var(--bg);
-            padding: 2.5rem;
-            max-width: 440px;
-            width: 90%;
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.66));
+            padding: 2.35rem;
+            max-width: 560px;
+            width: min(94vw, 560px);
             max-height: 90vh;
             overflow-y: auto;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.08); /* Minimal, elegant shadow */
-            border: 1px solid rgba(0,0,0,0.06);
-            border-radius: 16px;
+            box-shadow: 0 30px 90px rgba(15, 23, 42, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.92);
+            border: 1px solid rgba(255, 255, 255, 0.78);
+            border-radius: 30px;
             text-align: left;
             position: relative;
-            transform: translateY(10px);
-            transition: transform 0.3s ease;
+            transform: translateY(18px) scale(0.98);
+            opacity: 0.98;
+            transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.32s ease;
+            backdrop-filter: blur(30px) saturate(180%);
+            -webkit-backdrop-filter: blur(30px) saturate(180%);
         }
 
         .modal-overlay.active .modal {
-            transform: translateY(0);
+            transform: translateY(0) scale(1);
+            opacity: 1;
         }
 
         .modal-close {
             position: absolute;
-            top: 1.25rem;
-            right: 1.25rem;
-            background: none;
-            border: none;
-            font-size: 1.75rem;
+            top: 1.1rem;
+            right: 1.1rem;
+            width: 2.35rem;
+            height: 2.35rem;
+            background: rgba(255, 255, 255, 0.58);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: 999px;
+            font-size: 1.45rem;
             cursor: pointer;
-            color: #aaaaaa;
+            color: var(--text-muted);
             line-height: 1;
-            padding: 0.5rem;
-            transition: color 0.2s ease;
+            padding: 0;
+            transition: color 0.2s ease, background 0.2s ease, transform 0.16s ease;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
         }
 
         .modal-close:hover {
-            color: #000000;
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.86);
+            transform: translateY(-1px);
         }
 
         .modal-title {
-            font-size: 1.5rem;
-            font-weight: 600;
+            font-size: 1.75rem;
+            font-weight: 750;
             margin-bottom: 2rem;
-            letter-spacing: -0.02em;
+            letter-spacing: -0.04em;
         }
 
         .form-group {
@@ -235,20 +248,22 @@
 
         .form-input {
             width: 100%;
-            padding: 0.9rem 1rem;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
+            padding: 0.95rem 1rem;
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            border-radius: 16px;
             font-size: 1rem;
-            font-family: 'Inter', sans-serif;
+            font-family: inherit;
             color: var(--text-main);
-            background-color: #fafafa;
-            transition: border-color 0.2s ease, background-color 0.2s ease;
+            background: rgba(255, 255, 255, 0.72);
+            transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
         }
 
         .form-input:focus {
             outline: none;
-            border-color: #000000;
-            background-color: #ffffff;
+            border-color: rgba(15, 23, 42, 0.42);
+            background: rgba(255, 255, 255, 0.94);
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.92);
         }
 
         .pdf-options {
@@ -259,70 +274,136 @@
 
         /* Categorized Explorer Styles */
         .category-item {
-            border: 1px solid #e0e0e0;
-            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: 18px;
             overflow: hidden;
-            background: #fafafa;
-            transition: all 0.2s ease;
+            background: rgba(255, 255, 255, 0.54);
+            transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
         }
 
         .category-header {
             display: flex;
             align-items: center;
-            padding: 1rem 1.25rem;
+            padding: 1rem 1.15rem;
             cursor: pointer;
-            font-weight: 600;
+            font-weight: 650;
             font-size: 0.95rem;
             user-select: none;
             gap: 0.75rem;
+            color: var(--text-main);
+            transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
         }
 
         .category-header:hover {
-            background: #f0f0f0;
+            background: rgba(255, 255, 255, 0.62);
+            transform: translateY(-1px);
+            box-shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
         }
 
         .category-icon {
             width: 18px;
             height: 18px;
-            transition: transform 0.2s ease;
-            color: #888;
+            transition: transform 0.24s ease, color 0.2s ease;
+            color: var(--text-muted);
+            flex: 0 0 auto;
         }
 
-        .category-item.active {
-            border-color: #000;
-            background: #fff;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+        .category-item.active,
+        .category-item.open,
+        .subcategory-item.active,
+        .subcategory-item.open {
+            border-color: rgba(15, 23, 42, 0.18);
+            background: rgba(255, 255, 255, 0.78);
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.86);
         }
 
-        .category-item.active .category-icon {
+        .category-item.active > .category-header,
+        .category-item.open > .category-header,
+        .subcategory-item.active > .category-header,
+        .subcategory-item.open > .category-header {
+            background: rgba(255, 255, 255, 0.86);
+            border-color: rgba(15, 23, 42, 0.14);
+        }
+
+        .category-item.active > .category-header .category-icon,
+        .category-item.open > .category-header .category-icon,
+        .subcategory-item.active > .category-header .category-icon,
+        .subcategory-item.open > .category-header .category-icon {
             transform: rotate(90deg);
-            color: #000;
+            color: var(--accent);
+        }
+
+        .category-content,
+        .folder-children {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            max-height: 0;
+            overflow: hidden;
+            opacity: 0;
+            transform: translateY(-4px);
+            transition: max-height 0.36s cubic-bezier(.2,.8,.2,1), opacity 0.24s ease, transform 0.24s ease, margin-top 0.24s ease, padding-top 0.24s ease, padding-bottom 0.24s ease;
         }
 
         .category-content {
-            display: none;
-            padding: 0.5rem 1rem 1rem 3rem;
-            flex-direction: column;
-            gap: 0.5rem;
-            border-top: 1px solid #f0f0f0;
+            padding: 0 1rem 0 2.65rem;
+            border-top: 1px solid transparent;
         }
 
-        .category-item.active .category-content {
-            display: flex;
+        .category-item.active > .category-content,
+        .category-item.open > .category-content,
+        .subcategory-item.active > .category-content,
+        .subcategory-item.open > .category-content,
+        .folder-item.open > .folder-children {
+            max-height: 900px;
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .category-item.active > .category-content,
+        .category-item.open > .category-content {
+            padding-top: 0.5rem;
+            padding-bottom: 1rem;
+            border-top-color: rgba(148, 163, 184, 0.16);
+        }
+
+        .folder-item.open > .folder-children {
+            margin-top: 0.65rem;
+        }
+
+        .folder-toggle {
+            cursor: pointer;
+            user-select: none;
+            transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .folder-toggle:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
+        }
+
+        .folder-item.open > .folder-toggle {
+            background: rgba(255, 255, 255, 0.86);
+            border-color: rgba(15, 23, 42, 0.14);
         }
 
         /* Subcategory Styles */
         .subcategory-item {
             margin-bottom: 0.25rem;
+            border: 1px solid transparent;
+            border-radius: 14px;
+            transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
         }
 
         .subcategory-item .category-header {
-            padding: 0.5rem 0;
+            padding: 0.5rem 0.65rem;
             background: transparent;
+            border-radius: 12px;
         }
 
-        .subcategory-item.active .category-content {
-            display: flex;
+        .subcategory-item .category-header:hover {
+            background: rgba(255, 255, 255, 0.58);
         }
 
         .subcategory-item .category-content {
@@ -331,33 +412,42 @@
             gap: 0.25rem;
         }
 
+        .subcategory-item.active > .category-content,
+        .subcategory-item.open > .category-content {
+            padding-top: 0.35rem;
+            padding-bottom: 0.35rem;
+        }
+
         .file-select {
             display: flex;
             align-items: center;
-            padding: 0.75rem 1rem;
-            border-radius: 6px;
+            padding: 0.78rem 0.95rem;
+            border-radius: 14px;
             cursor: pointer;
             font-size: 0.9rem;
-            color: #444;
-            transition: all 0.2s ease;
+            color: var(--text-secondary);
+            transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.16s ease;
             gap: 0.75rem;
             border: 1px solid transparent;
         }
 
         .file-select:hover {
-            background: #f5f5f5;
+            background: rgba(255, 255, 255, 0.68);
+            transform: translateX(2px);
         }
 
         .file-select.selected {
-            background: #000;
+            background: linear-gradient(180deg, #0f172a 0%, #020617 100%);
             color: #fff;
-            font-weight: 500;
+            font-weight: 600;
+            border-color: rgba(255, 255, 255, 0.18);
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.18);
         }
 
         .file-select svg {
             width: 16px;
             height: 16px;
-            opacity: 0.6;
+            opacity: 0.68;
         }
 
         .file-select.selected svg {
@@ -366,11 +456,12 @@
         }
 
         .coming-soon {
-            opacity: 0.5;
+            opacity: 0.62;
             cursor: default;
             font-style: italic;
             font-size: 0.85rem;
             padding: 0.5rem 1rem;
+            color: var(--text-muted);
         }
 
         .btn-full {
@@ -378,7 +469,7 @@
             padding: 1.1rem;
             font-size: 1.05rem;
             margin-top: 1rem;
-            border-radius: 8px;
+            border-radius: 999px;
         }
 
         /* Responsive */
@@ -438,7 +529,7 @@
             <button class="modal-close" onclick="closeModal()">&times;</button>
             <h2 class="modal-title" style="margin-bottom: 1rem;">Access the Bank</h2>
             
-            <p style="font-size: 0.9rem; color: #555; margin-bottom: 1.75rem; line-height: 1.5;">
+            <p style="font-size: 0.92rem; color: var(--text-secondary); margin-bottom: 1.75rem; line-height: 1.55;">
                 Please write down your C3 username so that only our group gets access to it. We don't want others to know because maybe the college will get it and they will bring new questions and all that... so only write down your C3 username so that we won't exclude you from the access.
             </p>
 
@@ -465,7 +556,7 @@
                     <div class="pdf-options">
                         <!-- Theory Finals -->
                         <div class="category-item active" id="cat-theory">
-                            <div class="category-header" onclick="toggleCategory('cat-theory')">
+                            <div class="category-header folder-toggle" onclick="toggleCategory(event, 'cat-theory')">
                                 <svg class="category-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                                 <span>Theory Finals</span>
                             </div>
@@ -483,14 +574,14 @@
 
                         <!-- Block Questions -->
                         <div class="category-item" id="cat-block">
-                            <div class="category-header" onclick="toggleCategory('cat-block')">
+                            <div class="category-header folder-toggle" onclick="toggleCategory(event, 'cat-block')">
                                 <svg class="category-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                                 <span>Block Questions</span>
                             </div>
                             <div class="category-content">
                                 <!-- Lecture Classified Subfolder -->
                                 <div class="subcategory-item" id="sub-lecture-classified">
-                                    <div class="category-header" onclick="toggleCategory('sub-lecture-classified')">
+                                    <div class="category-header folder-toggle" onclick="toggleCategory(event, 'sub-lecture-classified')">
                                         <svg class="category-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                                         <span>Lecture Classified</span>
                                     </div>
@@ -516,7 +607,7 @@
 
                                 <!-- Non-Classified Subfolder -->
                                 <div class="subcategory-item" id="sub-non-classified">
-                                    <div class="category-header" onclick="toggleCategory('sub-non-classified')">
+                                    <div class="category-header folder-toggle" onclick="toggleCategory(event, 'sub-non-classified')">
                                         <svg class="category-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                                         <span>Non-Classified</span>
                                     </div>
@@ -549,7 +640,7 @@
 
                         <!-- OSCE -->
                         <div class="category-item" id="cat-osce">
-                            <div class="category-header" onclick="toggleCategory('cat-osce')">
+                            <div class="category-header folder-toggle" onclick="toggleCategory(event, 'cat-osce')">
                                 <svg class="category-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                                 <span>OSCE</span>
                             </div>
@@ -751,24 +842,33 @@
         });
 
         // Explorer Logic
-        function toggleCategory(id) {
+        function toggleCategory(eventOrId, maybeId) {
+            const event = typeof eventOrId === 'object' ? eventOrId : null;
+            const id = maybeId || eventOrId;
             const item = document.getElementById(id);
-            const isActive = item.classList.contains('active');
-            
-            if (isActive) {
-                item.classList.remove('active');
-            } else {
-                item.classList.add('active');
+            if (!item) return;
+
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
             }
+
+            const isOpen = item.classList.contains('open') || item.classList.contains('active');
+            item.classList.toggle('open', !isOpen);
+            item.classList.toggle('active', !isOpen);
         }
 
         function selectResource(element, filename) {
             if (!filename) return;
-            
+
+            if (window.event) {
+                window.event.stopPropagation();
+            }
+
             // UI Selection
             document.querySelectorAll('.file-select').forEach(el => el.classList.remove('selected'));
             element.classList.add('selected');
-            
+
             // Value update
             document.getElementById('pdfVersion').value = filename;
         }

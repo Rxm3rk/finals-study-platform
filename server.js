@@ -41,6 +41,11 @@ if (!fs.existsSync(BLOCKED_FILE)) {
 
 const USERS_FILE = path.join(WORK_DIR, 'users.json');
 const ANNOTATIONS_DIR = path.join(WORK_DIR, 'annotations');
+const ACTIVE_ANNOUNCEMENT = {
+    id: 'question-bank-new-content-2026-04-25',
+    message: 'New contents have been added to the question bank, check it out!',
+    durationMs: 15000
+};
 
 if (!fs.existsSync(USERS_FILE)) {
     fs.writeFileSync(USERS_FILE, JSON.stringify([], null, 2));
@@ -65,6 +70,24 @@ try {
 function updateUserActivity(user, ipAddress) {
     user.lastOnline = Date.now();
     user.ip = ipAddress;
+}
+
+function findUserBySession(users, username, token) {
+    return users.find(user => user.username === username && user.token === token);
+}
+
+function userHasDismissedAnnouncement(user, announcementId) {
+    return Array.isArray(user.dismissedAnnouncements) && user.dismissedAnnouncements.includes(announcementId);
+}
+
+function dismissAnnouncementForUser(user, announcementId) {
+    if (!Array.isArray(user.dismissedAnnouncements)) {
+        user.dismissedAnnouncements = [];
+    }
+
+    if (!user.dismissedAnnouncements.includes(announcementId)) {
+        user.dismissedAnnouncements.push(announcementId);
+    }
 }
 
 function appendAccessLog(entry) {
@@ -249,6 +272,56 @@ const server = http.createServer((req, res) => {
                 }
             } catch (err) {
                 res.writeHead(400); res.end('Invalid request');
+            }
+        });
+        return;
+    }
+
+    if (req.method === 'GET' && pathname === '/api/announcement') {
+        const username = parsedUrl.searchParams.get('user');
+        const token = parsedUrl.searchParams.get('token');
+        const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+        const user = findUserBySession(users, username, token);
+
+        if (!user) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ success: false, error: 'Invalid session' }));
+        }
+
+        updateUserActivity(user, clientIp);
+        fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            success: true,
+            announcement: userHasDismissedAnnouncement(user, ACTIVE_ANNOUNCEMENT.id) ? null : ACTIVE_ANNOUNCEMENT
+        }));
+        return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/announcement/dismiss') {
+        let body = '';
+        req.on('data', chunk => body += chunk.toString());
+        req.on('end', () => {
+            try {
+                const data = JSON.parse(body);
+                const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+                const user = findUserBySession(users, data.username, data.token);
+
+                if (!user) {
+                    res.writeHead(401, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'Invalid session' }));
+                }
+
+                dismissAnnouncementForUser(user, data.announcementId || ACTIVE_ANNOUNCEMENT.id);
+                updateUserActivity(user, clientIp);
+                fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+            } catch (err) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, error: 'Invalid request' }));
             }
         });
         return;

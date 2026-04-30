@@ -46,6 +46,8 @@ const ACTIVE_ANNOUNCEMENT = {
     message: 'New contents have been added to the question bank, check it out!',
     durationMs: 15000
 };
+const MAX_APPROVED_USERS = 19;
+const MAX_DEVICES_PER_USER = 2;
 
 if (!fs.existsSync(USERS_FILE)) {
     fs.writeFileSync(USERS_FILE, JSON.stringify([], null, 2));
@@ -117,6 +119,147 @@ function readAnnotationMapFromPath(annotationPath) {
 
 function getAdminPassword() {
     return process.env.ADMIN_PASSWORD || 'rxm3rk_admin';
+}
+
+function isUserApproved(user) {
+    return user.approved !== false;
+}
+
+function ensureSecurityFields(user, defaultApproved = true) {
+    if (typeof user.approved !== 'boolean') {
+        user.approved = defaultApproved;
+    }
+    if (!Object.prototype.hasOwnProperty.call(user, 'approvedAt')) {
+        user.approvedAt = user.approved ? (user.createdAt || null) : null;
+    }
+    if (!Object.prototype.hasOwnProperty.call(user, 'approvedBy')) {
+        user.approvedBy = user.approved ? 'legacy' : null;
+    }
+    if (!Array.isArray(user.devices)) {
+        user.devices = [];
+    }
+    if (!Array.isArray(user.securityEvents)) {
+        user.securityEvents = [];
+    }
+    return user;
+}
+
+function countApprovedUsers(users) {
+    return users.filter(user => isUserApproved(user)).length;
+}
+
+function recordSecurityEvent(user, type, details) {
+    ensureSecurityFields(user);
+    user.securityEvents.unshift({
+        type,
+        timestamp: new Date().toISOString(),
+        ...details
+    });
+    user.securityEvents = user.securityEvents.slice(0, 20);
+}
+
+function getDeviceLabel(userAgent) {
+    if (!userAgent) return 'Unknown device';
+    if (/iPad/i.test(userAgent)) return 'iPad';
+    if (/iPhone/i.test(userAgent)) return 'iPhone';
+    if (/Macintosh/i.test(userAgent) && /Mobile/i.test(userAgent)) return 'iPad';
+    return userAgent.slice(0, 80);
+}
+
+function normalizeDeviceId(deviceId) {
+    if (typeof deviceId !== 'string') return '';
+    return deviceId.trim().slice(0, 80);
+}
+
+function verifyUserAccess(user, clientIp, req, deviceId) {
+    ensureSecurityFields(user);
+
+    if (!isUserApproved(user)) {
+        recordSecurityEvent(user, 'blocked_unapproved_access', { ip: clientIp });
+        return { ok: false, status: 403, error: 'Account pending admin approval.' };
+    }
+
+    const normalizedDeviceId = normalizeDeviceId(deviceId);
+    if (!normalizedDeviceId) {
+        recordSecurityEvent(user, 'blocked_missing_device', { ip: clientIp });
+        return { ok: false, status: 403, error: 'Device verification failed. Please try again.' };
+    }
+
+    const existingDevice = user.devices.find(device => device.id === normalizedDeviceId);
+    if (existingDevice) {
+        existingDevice.lastSeenAt = new Date().toISOString();
+        existingDevice.lastIp = clientIp;
+        existingDevice.userAgent = req.headers['user-agent'] || '';
+        return { ok: true };
+    }
+
+    if (user.devices.length >= MAX_DEVICES_PER_USER) {
+        recordSecurityEvent(user, 'blocked_device_limit', {
+            ip: clientIp,
+            attemptedDeviceId: normalizedDeviceId,
+            userAgent: req.headers['user-agent'] || ''
+        });
+        return { ok: false, status: 403, error: 'Device limit reached. Contact admin.' };
+    }
+
+    user.devices.push({
+        id: normalizedDeviceId,
+        label: getDeviceLabel(req.headers['user-agent'] || ''),
+        firstSeenAt: new Date().toISOString(),
+        lastSeenAt: new Date().toISOString(),
+        lastIp: clientIp,
+        userAgent: req.headers['user-agent'] || ''
+    });
+
+    recordSecurityEvent(user, 'device_registered', {
+        ip: clientIp,
+        deviceId: normalizedDeviceId
+    });
+
+    return { ok: true };
+}
+
+function findAuthorizedUserBySession(users, username, token) {
+    const user = findUserBySession(users, username, token);
+    if (!user) return null;
+    ensureSecurityFields(user);
+    return isUserApproved(user) ? user : null;
+}
+
+function verifyProtectedSession(users, username, token, deviceId, clientIp, req) {
+    const user = findUserBySession(users, username, token);
+    if (!user) {
+        return { ok: false, status: 401, error: 'Invalid session' };
+    }
+
+    ensureSecurityFields(user);
+
+    if (!isUserApproved(user)) {
+        recordSecurityEvent(user, 'blocked_unapproved_access', { ip: clientIp });
+        return { ok: false, status: 403, error: 'Account pending admin approval.' };
+    }
+
+    const normalizedDeviceId = normalizeDeviceId(deviceId);
+    if (!normalizedDeviceId) {
+        recordSecurityEvent(user, 'blocked_missing_device', { ip: clientIp });
+        return { ok: false, status: 403, error: 'Device verification failed. Please try again.' };
+    }
+
+    const existingDevice = user.devices.find(device => device.id === normalizedDeviceId);
+    if (!existingDevice) {
+        recordSecurityEvent(user, 'blocked_unregistered_device', {
+            ip: clientIp,
+            attemptedDeviceId: normalizedDeviceId,
+            userAgent: req.headers['user-agent'] || ''
+        });
+        return { ok: false, status: 403, error: 'Device limit reached. Contact admin.' };
+    }
+
+    existingDevice.lastSeenAt = new Date().toISOString();
+    existingDevice.lastIp = clientIp;
+    existingDevice.userAgent = req.headers['user-agent'] || '';
+
+    return { ok: true, user };
 }
 
 function parseStoredAnnotationName(storageFile, users) {
@@ -211,10 +354,15 @@ const server = http.createServer((req, res) => {
                 }
                 const newUser = {
                     username: data.username,
-                    password: data.password, // Simple persistence
+                    password: data.password,
                     createdAt: new Date().toISOString(),
                     lastOnline: Date.now(),
-                    ip: clientIp
+                    ip: clientIp,
+                    approved: false,
+                    approvedAt: null,
+                    approvedBy: null,
+                    devices: [],
+                    securityEvents: []
                 };
                 updateUserActivity(newUser, clientIp);
                 users.push(newUser);
@@ -246,7 +394,14 @@ const server = http.createServer((req, res) => {
                     res.writeHead(401, { 'Content-Type': 'application/json' });
                     return res.end(JSON.stringify({ success: false, error: 'Invalid credentials or expired session' }));
                 }
-                
+
+                const accessCheck = verifyUserAccess(user, clientIp, req, data.deviceId);
+                if (!accessCheck.ok) {
+                    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+                    res.writeHead(accessCheck.status, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: accessCheck.error }));
+                }
+
                 updateUserActivity(user, clientIp);
 
                 if (pathname === '/api/login') {
@@ -280,14 +435,17 @@ const server = http.createServer((req, res) => {
     if (req.method === 'GET' && pathname === '/api/announcement') {
         const username = parsedUrl.searchParams.get('user');
         const token = parsedUrl.searchParams.get('token');
+        const deviceId = parsedUrl.searchParams.get('deviceId');
         const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-        const user = findUserBySession(users, username, token);
+        const sessionCheck = verifyProtectedSession(users, username, token, deviceId, clientIp, req);
 
-        if (!user) {
-            res.writeHead(401, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({ success: false, error: 'Invalid session' }));
+        if (!sessionCheck.ok) {
+            fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+            res.writeHead(sessionCheck.status, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ success: false, error: sessionCheck.error }));
         }
 
+        const user = sessionCheck.user;
         updateUserActivity(user, clientIp);
         fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
 
@@ -306,13 +464,15 @@ const server = http.createServer((req, res) => {
             try {
                 const data = JSON.parse(body);
                 const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-                const user = findUserBySession(users, data.username, data.token);
+                const sessionCheck = verifyProtectedSession(users, data.username, data.token, data.deviceId, clientIp, req);
 
-                if (!user) {
-                    res.writeHead(401, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ success: false, error: 'Invalid session' }));
+                if (!sessionCheck.ok) {
+                    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+                    res.writeHead(sessionCheck.status, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: sessionCheck.error }));
                 }
 
+                const user = sessionCheck.user;
                 dismissAnnouncementForUser(user, data.announcementId || ACTIVE_ANNOUNCEMENT.id);
                 updateUserActivity(user, clientIp);
                 fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
@@ -334,13 +494,15 @@ const server = http.createServer((req, res) => {
             try {
                 const data = body ? JSON.parse(body) : {};
                 const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-                const user = users.find(u => u.username === data.username && u.token === data.token);
+                const sessionCheck = verifyProtectedSession(users, data.username, data.token, data.deviceId, clientIp, req);
 
-                if (!user) {
-                    res.writeHead(401, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ success: false, error: 'Invalid session' }));
+                if (!sessionCheck.ok) {
+                    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+                    res.writeHead(sessionCheck.status, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: sessionCheck.error }));
                 }
 
+                const user = sessionCheck.user;
                 updateUserActivity(user, clientIp);
                 fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
                 appendAccessLog({
@@ -364,12 +526,16 @@ const server = http.createServer((req, res) => {
         const user = parsedUrl.searchParams.get('user');
         const file = parsedUrl.searchParams.get('file');
         const token = parsedUrl.searchParams.get('token');
-        
+        const deviceId = parsedUrl.searchParams.get('deviceId');
+
         const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-        if (!users.find(u => u.username === user && u.token === token)) {
-            res.writeHead(401); return res.end('Unauthorized');
+        const sessionCheck = verifyProtectedSession(users, user, token, deviceId, clientIp, req);
+        if (!sessionCheck.ok) {
+            fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+            res.writeHead(sessionCheck.status); return res.end(sessionCheck.error);
         }
 
+        fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
         const annPath = getAnnotationPath(user, file);
         const annotations = readAnnotationMapFromPath(annPath);
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -384,10 +550,13 @@ const server = http.createServer((req, res) => {
             try {
                 const data = JSON.parse(body);
                 const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-                if (!users.find(u => u.username === data.user && u.token === data.token)) {
-                    res.writeHead(401); return res.end('Unauthorized');
+                const sessionCheck = verifyProtectedSession(users, data.user, data.token, data.deviceId, clientIp, req);
+                if (!sessionCheck.ok) {
+                    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+                    res.writeHead(sessionCheck.status); return res.end(sessionCheck.error);
                 }
 
+                fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
                 const annPath = getAnnotationPath(data.user, data.file);
                 const annotations = readAnnotationMapFromPath(annPath);
 
@@ -414,17 +583,101 @@ const server = http.createServer((req, res) => {
             const dbData = fs.readFileSync(DB_FILE, 'utf8');
             const blockedData = fs.readFileSync(BLOCKED_FILE, 'utf8');
             const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+            users.forEach(user => ensureSecurityFields(user));
+            fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
                 database: JSON.parse(dbData),
                 blocked: JSON.parse(blockedData),
                 users,
+                approvedUserCount: countApprovedUsers(users),
+                maxApprovedUsers: MAX_APPROVED_USERS,
+                maxDevicesPerUser: MAX_DEVICES_PER_USER,
                 annotations: listAnnotationSummaries(users)
             }));
         } catch(e) {
             res.writeHead(500);
             res.end(JSON.stringify({ error: 'Database read error' }));
         }
+        return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/admin/user/approve') {
+        const pwd = parsedUrl.searchParams.get('pwd');
+        const adminPassword = getAdminPassword();
+        if (pwd !== adminPassword) {
+            res.writeHead(401);
+            return res.end('Unauthorized');
+        }
+
+        let body = '';
+        req.on('data', chunk => body += chunk.toString());
+        req.on('end', () => {
+            try {
+                const data = JSON.parse(body);
+                const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+                users.forEach(user => ensureSecurityFields(user, user.username === data.username ? false : true));
+                const user = users.find(u => u.username === data.username);
+
+                if (!user) {
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'User not found' }));
+                }
+
+                if (!user.approved && countApprovedUsers(users) >= MAX_APPROVED_USERS) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'Approved user limit reached' }));
+                }
+
+                user.approved = true;
+                user.approvedAt = new Date().toISOString();
+                user.approvedBy = 'admin';
+                recordSecurityEvent(user, 'admin_approved_user', { ip: clientIp });
+
+                fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, error: 'Invalid request' }));
+            }
+        });
+        return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/admin/user/reset-devices') {
+        const pwd = parsedUrl.searchParams.get('pwd');
+        const adminPassword = getAdminPassword();
+        if (pwd !== adminPassword) {
+            res.writeHead(401);
+            return res.end('Unauthorized');
+        }
+
+        let body = '';
+        req.on('data', chunk => body += chunk.toString());
+        req.on('end', () => {
+            try {
+                const data = JSON.parse(body);
+                const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+                users.forEach(user => ensureSecurityFields(user));
+                const user = users.find(u => u.username === data.username);
+
+                if (!user) {
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'User not found' }));
+                }
+
+                user.devices = [];
+                recordSecurityEvent(user, 'admin_reset_devices', { ip: clientIp });
+
+                fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, error: 'Invalid request' }));
+            }
+        });
         return;
     }
 
@@ -599,6 +852,7 @@ const server = http.createServer((req, res) => {
         const file = parsedUrl.searchParams.get('file');
         const user = parsedUrl.searchParams.get('user');
         const token = parsedUrl.searchParams.get('token');
+        const deviceId = parsedUrl.searchParams.get('deviceId');
 
         if (!file || !user || !token) {
             res.writeHead(401);
@@ -607,13 +861,15 @@ const server = http.createServer((req, res) => {
 
         try {
             const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-            const userData = users.find(u => u.username === user && u.token === token);
-            
-            if (!userData) {
-                res.writeHead(401);
-                return res.end('Unauthorized: Session expired or invalid token');
+            const sessionCheck = verifyProtectedSession(users, user, token, deviceId, clientIp, req);
+
+            if (!sessionCheck.ok) {
+                fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+                res.writeHead(sessionCheck.status);
+                return res.end(sessionCheck.error);
             }
 
+            const userData = sessionCheck.user;
             const blockedUsers = JSON.parse(fs.readFileSync(BLOCKED_FILE, 'utf8'));
             if (blockedUsers.includes(user) || (userData.ip && blockedUsers.includes(userData.ip))) {
                 res.writeHead(403);

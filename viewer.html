@@ -233,6 +233,32 @@
             line-height: 1;
             flex: 0 0 auto;
         }
+
+        .rxm-watermark {
+            position: fixed;
+            inset: 60px 0 0;
+            z-index: 6;
+            pointer-events: none;
+            overflow: hidden;
+            opacity: 0.12;
+        }
+
+        .rxm-watermark::before {
+            content: "@RXM3RK  @RXM3RK  @RXM3RK  @RXM3RK";
+            position: absolute;
+            top: -10%;
+            left: -25%;
+            width: 150%;
+            height: 150%;
+            color: #111827;
+            font-size: clamp(2rem, 8vw, 5rem);
+            font-weight: 800;
+            letter-spacing: 0.4rem;
+            line-height: 2.8;
+            white-space: pre-wrap;
+            transform: rotate(-24deg);
+            text-align: center;
+        }
     </style>
 </head>
 <body oncontextmenu="return false;">
@@ -263,6 +289,7 @@
     </div>
 
     <div id="loader">Loading secure document...</div>
+    <div class="rxm-watermark" aria-hidden="true"></div>
     <div id="viewer-viewport">
         <div id="viewer-stage" class="centered">
             <div id="pdf-container"></div>
@@ -295,6 +322,26 @@
             }
         }
 
+        function getOrCreateDeviceId() {
+            const existing = safeStorageGet('device_id');
+            if (existing) return existing;
+
+            const randomPart = window.crypto && window.crypto.getRandomValues
+                ? Array.from(window.crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('')
+                : Math.random().toString(36).slice(2) + Date.now().toString(36);
+            const deviceId = `device_${randomPart}`;
+            safeStorageSet('device_id', deviceId);
+            return deviceId;
+        }
+
+        function getDeviceLabel() {
+            const ua = navigator.userAgent || '';
+            if (/iPad/i.test(ua)) return 'iPad';
+            if (/iPhone/i.test(ua)) return 'iPhone';
+            if (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1) return 'iPad';
+            return 'Browser';
+        }
+
         function safeStorageClear() {
             try {
                 localStorage.clear();
@@ -305,17 +352,17 @@
 
         let announcementTimer = null;
 
-        function dismissAnnouncement(announcementId, username, activeToken) {
-            if (!announcementId || !username || !activeToken) return;
+        function dismissAnnouncement(announcementId, username, activeToken, activeDeviceId) {
+            if (!announcementId || !username || !activeToken || !activeDeviceId) return;
 
             fetch('/api/announcement/dismiss', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, token: activeToken, announcementId })
+                body: JSON.stringify({ username, token: activeToken, deviceId: activeDeviceId, announcementId })
             }).catch(() => {});
         }
 
-        function showAnnouncementToast(announcement, username, activeToken) {
+        function showAnnouncementToast(announcement, username, activeToken, activeDeviceId) {
             if (!announcement || !announcement.id || !announcement.message) return;
 
             const existing = document.getElementById('siteAnnouncement');
@@ -334,7 +381,7 @@
 
             const close = () => {
                 toast.classList.remove('active');
-                dismissAnnouncement(announcement.id, username, activeToken);
+                dismissAnnouncement(announcement.id, username, activeToken, activeDeviceId);
                 setTimeout(() => toast.remove(), 240);
             };
 
@@ -343,15 +390,15 @@
             announcementTimer = setTimeout(close, announcement.durationMs || 15000);
         }
 
-        async function loadAnnouncement(username, activeToken) {
-            if (!username || !activeToken) return;
+        async function loadAnnouncement(username, activeToken, activeDeviceId) {
+            if (!username || !activeToken || !activeDeviceId) return;
 
             try {
-                const response = await fetch(`/api/announcement?user=${encodeURIComponent(username)}&token=${encodeURIComponent(activeToken)}`);
+                const response = await fetch(`/api/announcement?user=${encodeURIComponent(username)}&token=${encodeURIComponent(activeToken)}&deviceId=${encodeURIComponent(activeDeviceId)}`);
                 if (!response.ok) return;
                 const data = await response.json();
                 if (data.success && data.announcement) {
-                    showAnnouncementToast(data.announcement, username, activeToken);
+                    showAnnouncementToast(data.announcement, username, activeToken, activeDeviceId);
                 }
             } catch (e) {}
         }
@@ -635,7 +682,14 @@
             const response = await fetch('/api/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: user, password: savedPassword, pdfVersion: fileName, silentRefresh: true })
+                body: JSON.stringify({
+                    username: user,
+                    password: savedPassword,
+                    pdfVersion: fileName,
+                    silentRefresh: true,
+                    deviceId: getOrCreateDeviceId(),
+                    deviceLabel: getDeviceLabel()
+                })
             });
 
             const data = await response.json();
@@ -658,9 +712,11 @@
                 activeToken = await refreshSessionToken();
             }
 
+            const deviceId = getOrCreateDeviceId();
             return {
                 token: activeToken,
-                pdfUrl: '/api/document?file=' + encodeURIComponent(fileName) + '&user=' + encodeURIComponent(user) + '&token=' + encodeURIComponent(activeToken)
+                deviceId,
+                pdfUrl: '/api/document?file=' + encodeURIComponent(fileName) + '&user=' + encodeURIComponent(user) + '&token=' + encodeURIComponent(activeToken) + '&deviceId=' + encodeURIComponent(deviceId)
             };
         }
 
@@ -673,6 +729,7 @@
             const payload = JSON.stringify({
                 username: user,
                 token: activeToken,
+                deviceId: getOrCreateDeviceId(),
                 pdfVersion: fileName
             });
 
@@ -694,8 +751,9 @@
             try {
                 const session = await buildViewerSession();
                 const activeToken = session.token;
+                const activeDeviceId = session.deviceId;
                 const pdfUrl = session.pdfUrl;
-                loadAnnouncement(user, activeToken);
+                loadAnnouncement(user, activeToken, activeDeviceId);
 
                 window.addEventListener('pagehide', () => sendCloseSignal(activeToken));
                 window.addEventListener('beforeunload', () => sendCloseSignal(activeToken));
@@ -713,7 +771,7 @@
                     // Fetch full Cloud Annotations object for this document
                     let serverAnnotations = {};
                     try {
-                        const annRes = await fetch(`/api/annotations?file=${encodeURIComponent(fileName)}&user=${encodeURIComponent(user)}&token=${encodeURIComponent(activeToken)}`);
+                        const annRes = await fetch(`/api/annotations?file=${encodeURIComponent(fileName)}&user=${encodeURIComponent(user)}&token=${encodeURIComponent(activeToken)}&deviceId=${encodeURIComponent(activeDeviceId)}`);
                         if (annRes.ok) serverAnnotations = await annRes.json();
                     } catch(e) { console.error('Cloud load fail', e); }
 
@@ -722,7 +780,12 @@
                         fetch('/api/heartbeat', {
                             method: 'POST',
                             headers: {'Content-Type':'application/json'},
-                            body: JSON.stringify({username: user, token: activeToken})
+                            body: JSON.stringify({
+                                username: user,
+                                token: activeToken,
+                                deviceId: getOrCreateDeviceId(),
+                                deviceLabel: getDeviceLabel()
+                            })
                         }).catch(()=>{});
                     }, 20000);
 
@@ -972,6 +1035,7 @@
                         body: JSON.stringify({
                             user: user,
                             token: token,
+                            deviceId: getOrCreateDeviceId(),
                             file: fileName,
                             page: pageNum,
                             dataUrl: dataUrl

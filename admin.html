@@ -97,6 +97,37 @@
             font-weight: 600;
         }
 
+        .approval-badge {
+            padding: 4px 8px;
+            border-radius: 99px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            display: inline-block;
+            margin-left: 5px;
+        }
+
+        .approval-badge.approved {
+            background: #e8f5e9;
+            color: #1b5e20;
+        }
+
+        .approval-badge.pending {
+            background: #fff3cd;
+            color: #8a5a00;
+        }
+
+        .device-summary {
+            font-size: 0.76rem;
+            color: #666;
+            margin-top: 0.25rem;
+        }
+
+        .security-events {
+            margin-top: 0.35rem;
+            font-size: 0.72rem;
+            color: #777;
+        }
+
         .status-msg {
             color: red;
             margin-top: 10px;
@@ -202,6 +233,7 @@
             </div>
             <div style="flex: 1; min-width: 250px;">
                 <h3>Registered Users</h3>
+                <div id="approval-count" style="font-size:0.8rem; color:#666; margin-top:-0.25rem;">Loading approval status...</div>
                 <div id="users-list" style="margin-top: 10px; font-size: 0.9rem; color: #555;">Loading...</div>
             </div>
         </div>
@@ -268,22 +300,40 @@
 
         function renderUsersAndPresence(data) {
             const usersList = document.getElementById('users-list');
+            const approvalCount = document.getElementById('approval-count');
+            if (approvalCount) {
+                approvalCount.textContent = `${data.approvedUserCount || 0}/${data.maxApprovedUsers || 19} approved users`;
+            }
+
             if (data.users && data.users.length > 0) {
                 usersList.innerHTML = data.users.map(u => {
                     const seenText = formatLastSeen(u.lastOnline);
                     const isBlocked = data.blocked && (data.blocked.includes(u.ip) || data.blocked.includes(u.username));
+                    const isApproved = u.approved !== false;
+                    const devices = Array.isArray(u.devices) ? u.devices : [];
+                    const securityEvents = Array.isArray(u.securityEvents) ? u.securityEvents.slice(0, 2) : [];
                     const btn = isBlocked ?
                         `<button onclick='unban(${JSON.stringify(u.username)})' style="padding:4px 8px; font-size:0.75rem; background:#6c757d; border-radius:4px;">Unban</button>` :
                         `<button onclick='banUser(${JSON.stringify(u.username)})' style="padding:4px 8px; font-size:0.75rem; background:#dc3545; border-radius:4px;">Ban IP</button>`;
+                    const approveBtn = isApproved ? '' : `<button onclick='approveUser(${JSON.stringify(u.username)})' style="padding:4px 8px; font-size:0.75rem; background:#198754; border-radius:4px; margin-left:4px;">Approve</button>`;
+                    const resetBtn = `<button onclick='resetDevices(${JSON.stringify(u.username)})' style="padding:4px 8px; font-size:0.75rem; background:#0d6efd; border-radius:4px; margin-left:4px;">Reset Devices</button>`;
+                    const deviceText = `${devices.length}/${data.maxDevicesPerUser || 2} devices`;
+                    const latestDevice = devices.slice().sort((a, b) => new Date(b.lastSeenAt || b.firstSeenAt || 0) - new Date(a.lastSeenAt || a.firstSeenAt || 0))[0];
+                    const eventText = securityEvents.map(event => `${escapeHtml(event.type)} · ${new Date(event.timestamp).toLocaleString()}`).join('<br>');
 
-                    return `<div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center; background:#fbfbfb; padding:8px; border-radius:6px; border:1px solid #eee;">
+                    return `<div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:flex-start; gap:8px; background:#fbfbfb; padding:8px; border-radius:6px; border:1px solid #eee;">
                         <div>
                             <strong style="color:#222;">${escapeHtml(u.username)}</strong>
+                            <span class="approval-badge ${isApproved ? 'approved' : 'pending'}">${isApproved ? 'APPROVED' : 'PENDING'}</span>
                             <span style="font-size:0.75rem; color:#888;">(${escapeHtml(u.ip || 'No IP')})</span>
                             <br><span style="font-size:0.8rem; color:#555;">last seen: ${seenText}</span>
+                            <div class="device-summary">${deviceText}${latestDevice ? ` · latest: ${escapeHtml(latestDevice.label || 'device')}` : ''}</div>
+                            ${eventText ? `<div class="security-events">${eventText}</div>` : ''}
                             ${isBlocked ? '<span class="blocked-badge" style="margin-left: 5px;">BANNED</span>' : ''}
                         </div>
-                        <div>
+                        <div style="display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px;">
+                            ${approveBtn}
+                            ${resetBtn}
                             ${btn}
                             <button onclick='deleteUser(${JSON.stringify(u.username)})' style="padding:4px 8px; font-size:0.75rem; background:#333; border-radius:4px; margin-left:4px;">Delete User</button>
                         </div>
@@ -567,6 +617,45 @@
                 }
             } catch(e) {
                 alert("Error unbanning.");
+            }
+        }
+
+        async function approveUser(username) {
+            const pwd = document.getElementById('pwd').value;
+            try {
+                const res = await fetch(`/api/admin/user/approve?pwd=${encodeURIComponent(pwd)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    loadData();
+                } else {
+                    alert(data.error || 'Failed to approve user.');
+                }
+            } catch(e) {
+                alert('Error approving user.');
+            }
+        }
+
+        async function resetDevices(username) {
+            if (!confirm(`Reset trusted devices for ${username}? They will need to log in again from their current iPad/iPhone.`)) return;
+            const pwd = document.getElementById('pwd').value;
+            try {
+                const res = await fetch(`/api/admin/user/reset-devices?pwd=${encodeURIComponent(pwd)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    loadData();
+                } else {
+                    alert(data.error || 'Failed to reset devices.');
+                }
+            } catch(e) {
+                alert('Error resetting devices.');
             }
         }
 

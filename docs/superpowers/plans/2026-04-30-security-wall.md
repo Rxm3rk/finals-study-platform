@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a server-side security wall that limits access to admin-approved group members, caps approved users at 19, allows two trusted devices per user, blocks third devices, and adds a subtle `@RXM3RK` viewer watermark.
+**Goal:** Add a server-side security wall that limits access to admin-approved group members, caps approved users at 19, allows two trusted devices per user, and blocks third devices.
 
 **Architecture:** Keep the current static HTML + Node `http` architecture. Add small security helper functions in `server.js`, enforce approval/device checks in existing auth-protected routes, pass a browser-generated device ID from `index.html` and `viewer.html`, and extend `admin.html` with approval/reset controls.
 
@@ -23,7 +23,7 @@
   - Send `deviceId` and `deviceLabel` with login requests.
   - Keep registration UX simple: successful registration tells the user to wait for admin approval.
 - Modify `viewer.html`
-  - Add subtle repeated `@RXM3RK` watermark overlay.
+  - Do not render a viewer watermark overlay.
   - Add client-side device ID helper.
   - Send device fields during silent token refresh.
 - Modify `admin.html`
@@ -1070,6 +1070,6 @@ Expected: commit succeeds and push updates `origin/master`.
 
 ## Self-Review
 
-- Spec coverage: pending registration, admin approval, 19 approved-user cap, two devices per approved user, third-device blocking, protected-route enforcement, admin reset controls, iOS/iPad-focused flow, and subtle `@RXM3RK` watermark are covered.
+- Spec coverage: pending registration, admin approval, 19 approved-user cap, two devices per approved user, third-device blocking, protected-route enforcement, admin reset controls, and iOS/iPad-focused flow are covered.
 - Placeholder scan: no TBD/TODO/later placeholders are present.
 - Type consistency: user fields use `approved`, `approvedAt`, `approvedBy`, `devices`, and `securityEvents` consistently; client/server device field is `deviceId`; admin endpoints are `/api/admin/user/approve` and `/api/admin/user/reset-devices`.

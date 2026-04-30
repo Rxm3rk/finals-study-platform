@@ -86,13 +86,7 @@ Admin approval should enforce the 19-user cap. If 19 users are already approved,
 
 ## Viewer watermark
 
-The viewer should render a subtle watermark overlay behind/over the PDF view without becoming annoying. The watermark should use only the owner's mark:
-
-```text
-@RXM3RK
-```
-
-The watermark should repeat lightly across the visible viewer area, using low opacity and rotation. It should not include user details, timestamps, device IDs, or other distracting identifiers.
+No viewer watermark should be shown. Account-sharing protection should rely on admin approval, the two-device limit, session rotation, protected PDF routes, and admin reset controls.
 
 ## Copy and screenshot friction
 
@@ -101,7 +95,7 @@ Keep existing browser friction and add only safe, non-breaking measures:
 - Keep `user-select: none` and image dragging disabled in the viewer.
 - Hide print output with existing `@media print` behavior.
 - Avoid relying on right-click prevention because most users are iOS/iPadOS and it adds little value.
-- Do not claim screenshots are impossible. The watermark is the core leakage deterrent.
+- Do not claim screenshots are impossible. The security wall is focused on access control, not screenshot prevention.
 
 ## Data flow
 
@@ -116,7 +110,7 @@ Keep existing browser friction and add only safe, non-breaking measures:
 9. Server rotates session token and returns success.
 10. Viewer opens with token.
 11. `/api/document`, `/api/annotations`, `/api/heartbeat`, and related protected routes continue requiring a valid token and should also respect approval/security status.
-12. Viewer shows the subtle `@RXM3RK` watermark.
+12. Viewer opens without a watermark overlay.
 
 ## Error behavior
 
@@ -140,7 +134,6 @@ Security details should go into server logs/user security events, not detailed p
 - Reset devices as admin, then verify the next device can bind again.
 - Verify approved-user cap blocks the 20th approval.
 - Verify document, annotation, heartbeat, and announcement endpoints reject unapproved users.
-- Verify the subtle `@RXM3RK` watermark appears in the viewer and does not block PDF interaction.
 - Run server syntax checks and inline script checks.
 
 ## Out of scope

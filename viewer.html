@@ -233,32 +233,6 @@
             line-height: 1;
             flex: 0 0 auto;
         }
-
-        .rxm-watermark {
-            position: fixed;
-            inset: 60px 0 0;
-            z-index: 6;
-            pointer-events: none;
-            overflow: hidden;
-            opacity: 0.12;
-        }
-
-        .rxm-watermark::before {
-            content: "@RXM3RK  @RXM3RK  @RXM3RK  @RXM3RK";
-            position: absolute;
-            top: -10%;
-            left: -25%;
-            width: 150%;
-            height: 150%;
-            color: #111827;
-            font-size: clamp(2rem, 8vw, 5rem);
-            font-weight: 800;
-            letter-spacing: 0.4rem;
-            line-height: 2.8;
-            white-space: pre-wrap;
-            transform: rotate(-24deg);
-            text-align: center;
-        }
     </style>
 </head>
 <body oncontextmenu="return false;">
@@ -289,7 +263,6 @@
     </div>
 
     <div id="loader">Loading secure document...</div>
-    <div class="rxm-watermark" aria-hidden="true"></div>
     <div id="viewer-viewport">
         <div id="viewer-stage" class="centered">
             <div id="pdf-container"></div>

@@ -944,8 +944,13 @@
                     safeStorageSet('saved_password', password);
                     if (data.token) {
                         safeStorageSet('session_token', data.token);
-                        loadAnnouncement(username, data.token);
                         console.log('Session token saved:', data.token);
+                    }
+                    if (data.sessionId) {
+                        safeStorageSet('session_id', data.sessionId);
+                    }
+                    if (data.token && data.sessionId) {
+                        loadAnnouncement(username, data.token);
                     }
 
                     const viewerParams = new URLSearchParams({
@@ -954,6 +959,9 @@
                     });
                     if (data.token) {
                         viewerParams.set('token', data.token);
+                    }
+                    if (data.sessionId) {
+                        viewerParams.set('sessionId', data.sessionId);
                     }
                     viewerUrl = 'viewer.html?' + viewerParams.toString();
 

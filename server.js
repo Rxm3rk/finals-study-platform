@@ -1,6 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 // Global crash handlers to prevent silent Railway deaths
 process.on('uncaughtException', (err) => {
@@ -48,6 +49,8 @@ const ACTIVE_ANNOUNCEMENT = {
 };
 const MAX_APPROVED_USERS = 19;
 const MAX_DEVICES_PER_USER = 2;
+const ACTIVE_SESSION_HEARTBEAT_MS = 8000;
+const ACTIVE_SESSION_REPLACED_ERROR = 'SESSION_REPLACED';
 
 if (!fs.existsSync(USERS_FILE)) {
     fs.writeFileSync(USERS_FILE, JSON.stringify([], null, 2));
@@ -141,6 +144,9 @@ function ensureSecurityFields(user, defaultApproved = true) {
     if (!Array.isArray(user.securityEvents)) {
         user.securityEvents = [];
     }
+    if (!Object.prototype.hasOwnProperty.call(user, 'activeSession')) {
+        user.activeSession = null;
+    }
     return user;
 }
 
@@ -224,6 +230,96 @@ function findAuthorizedUserBySession(users, username, token) {
     if (!user) return null;
     ensureSecurityFields(user);
     return isUserApproved(user) ? user : null;
+}
+
+function createActiveSession(user, data, clientIp, req) {
+    ensureSecurityFields(user);
+
+    const previousSession = user.activeSession;
+    const sessionId = crypto.randomBytes(16).toString('hex');
+    const token = crypto.randomBytes(16).toString('hex');
+    const deviceId = normalizeDeviceId(data.deviceId);
+
+    if (previousSession && (previousSession.token !== token || previousSession.deviceId !== deviceId)) {
+        recordSecurityEvent(user, 'active_session_replaced', {
+            ip: clientIp,
+            previousDeviceId: previousSession.deviceId || null,
+            nextDeviceId: deviceId,
+            pdfVersion: data.pdfVersion || null
+        });
+        appendAccessLog({
+            username: user.username,
+            pdfVersion: data.pdfVersion || previousSession.pdfVersion || null,
+            ip: clientIp,
+            action: 'session_replaced'
+        });
+    }
+
+    user.token = token;
+    user.activeSession = {
+        id: sessionId,
+        token,
+        deviceId,
+        pdfVersion: data.pdfVersion || null,
+        startedAt: new Date().toISOString(),
+        lastHeartbeatAt: new Date().toISOString(),
+        ip: clientIp,
+        userAgent: req.headers['user-agent'] || ''
+    };
+
+    return user.activeSession;
+}
+
+function isCurrentActiveSession(user, token, sessionId, deviceId) {
+    ensureSecurityFields(user);
+    const normalizedDeviceId = normalizeDeviceId(deviceId);
+    return Boolean(
+        user.activeSession &&
+        user.activeSession.id === sessionId &&
+        user.activeSession.token === token &&
+        user.activeSession.deviceId === normalizedDeviceId
+    );
+}
+
+function verifyActiveProtectedSession(users, username, token, sessionId, deviceId, clientIp, req) {
+    let sessionCheck = verifyProtectedSession(users, username, token, deviceId, clientIp, req);
+    if (!sessionCheck.ok && sessionCheck.status === 401) {
+        const staleUser = users.find(user => user.username === username);
+        if (staleUser) {
+            ensureSecurityFields(staleUser);
+            const normalizedDeviceId = normalizeDeviceId(deviceId);
+            const staleDevice = staleUser.devices.find(device => device.id === normalizedDeviceId);
+            if (staleDevice && isUserApproved(staleUser)) {
+                sessionCheck = { ok: true, user: staleUser };
+            }
+        }
+    }
+    if (!sessionCheck.ok) return sessionCheck;
+
+    const user = sessionCheck.user;
+    if (!sessionId || !isCurrentActiveSession(user, token, sessionId, deviceId)) {
+        recordSecurityEvent(user, 'blocked_stale_session', {
+            ip: clientIp,
+            attemptedSessionId: sessionId || null,
+            attemptedDeviceId: normalizeDeviceId(deviceId),
+            activeDeviceId: user.activeSession ? user.activeSession.deviceId : null
+        });
+        return { ok: false, status: 409, error: ACTIVE_SESSION_REPLACED_ERROR };
+    }
+
+    user.activeSession.lastHeartbeatAt = new Date().toISOString();
+    user.activeSession.ip = clientIp;
+    user.activeSession.userAgent = req.headers['user-agent'] || '';
+    return { ok: true, user };
+}
+
+function clearActiveSessionIfCurrent(user, token, sessionId, deviceId) {
+    if (!isCurrentActiveSession(user, token, sessionId, deviceId)) {
+        return false;
+    }
+
+    user.activeSession = null;
+    return true;
 }
 
 function verifyProtectedSession(users, username, token, deviceId, clientIp, req) {
@@ -388,8 +484,23 @@ const server = http.createServer((req, res) => {
                     return res.end(JSON.stringify({ success: false, error: 'Banned' }));
                 }
                 const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-                const user = users.find(u => u.username === data.username && (u.password === data.password || u.token === data.token));
-                
+
+                if (pathname === '/api/heartbeat') {
+                    const sessionCheck = verifyActiveProtectedSession(users, data.username, data.token, data.sessionId, data.deviceId, clientIp, req);
+                    if (!sessionCheck.ok) {
+                        fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+                        res.writeHead(sessionCheck.status, { 'Content-Type': 'application/json' });
+                        return res.end(JSON.stringify({ success: false, error: sessionCheck.error }));
+                    }
+
+                    updateUserActivity(sessionCheck.user, clientIp);
+                    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: true, active: true }));
+                }
+
+                const user = users.find(u => u.username === data.username && u.password === data.password);
+
                 if (!user) {
                     res.writeHead(401, { 'Content-Type': 'application/json' });
                     return res.end(JSON.stringify({ success: false, error: 'Invalid credentials or expired session' }));
@@ -402,29 +513,45 @@ const server = http.createServer((req, res) => {
                     return res.end(JSON.stringify({ success: false, error: accessCheck.error }));
                 }
 
-                updateUserActivity(user, clientIp);
-
-                if (pathname === '/api/login') {
-                    // Generate a new session token on each fresh login to prevent concurrent sharing
-                    user.token = require('crypto').randomBytes(16).toString('hex');
-                    const shouldLogLogin = data.pdfVersion && !data.silentRefresh;
-
-                    if (shouldLogLogin) {
-                        appendAccessLog({
-                            username: data.username,
-                            pdfVersion: data.pdfVersion,
-                            ip: clientIp,
-                            action: 'login'
-                        });
+                if (data.silentRefresh) {
+                    const sessionCheck = verifyActiveProtectedSession(users, data.username, data.token, data.sessionId, data.deviceId, clientIp, req);
+                    if (!sessionCheck.ok) {
+                        fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+                        res.writeHead(sessionCheck.status, { 'Content-Type': 'application/json' });
+                        return res.end(JSON.stringify({ success: false, error: sessionCheck.error }));
                     }
+
+                    updateUserActivity(sessionCheck.user, clientIp);
                     fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
                     res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ success: true, token: user.token }));
-                } else {
-                    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ success: true }));
+                    return res.end(JSON.stringify({
+                        success: true,
+                        token: sessionCheck.user.activeSession.token,
+                        sessionId: sessionCheck.user.activeSession.id,
+                        heartbeatMs: ACTIVE_SESSION_HEARTBEAT_MS
+                    }));
                 }
+
+                updateUserActivity(user, clientIp);
+                const activeSession = createActiveSession(user, data, clientIp, req);
+                const shouldLogLogin = data.pdfVersion;
+
+                if (shouldLogLogin) {
+                    appendAccessLog({
+                        username: data.username,
+                        pdfVersion: data.pdfVersion,
+                        ip: clientIp,
+                        action: 'login'
+                    });
+                }
+                fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    success: true,
+                    token: activeSession.token,
+                    sessionId: activeSession.id,
+                    heartbeatMs: ACTIVE_SESSION_HEARTBEAT_MS
+                }));
             } catch (err) {
                 res.writeHead(400); res.end('Invalid request');
             }
@@ -436,8 +563,9 @@ const server = http.createServer((req, res) => {
         const username = parsedUrl.searchParams.get('user');
         const token = parsedUrl.searchParams.get('token');
         const deviceId = parsedUrl.searchParams.get('deviceId');
+        const sessionId = parsedUrl.searchParams.get('sessionId');
         const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-        const sessionCheck = verifyProtectedSession(users, username, token, deviceId, clientIp, req);
+        const sessionCheck = verifyActiveProtectedSession(users, username, token, sessionId, deviceId, clientIp, req);
 
         if (!sessionCheck.ok) {
             fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
@@ -464,7 +592,7 @@ const server = http.createServer((req, res) => {
             try {
                 const data = JSON.parse(body);
                 const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-                const sessionCheck = verifyProtectedSession(users, data.username, data.token, data.deviceId, clientIp, req);
+                const sessionCheck = verifyActiveProtectedSession(users, data.username, data.token, data.sessionId, data.deviceId, clientIp, req);
 
                 if (!sessionCheck.ok) {
                     fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
@@ -494,7 +622,7 @@ const server = http.createServer((req, res) => {
             try {
                 const data = body ? JSON.parse(body) : {};
                 const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-                const sessionCheck = verifyProtectedSession(users, data.username, data.token, data.deviceId, clientIp, req);
+                const sessionCheck = verifyActiveProtectedSession(users, data.username, data.token, data.sessionId, data.deviceId, clientIp, req);
 
                 if (!sessionCheck.ok) {
                     fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
@@ -503,6 +631,7 @@ const server = http.createServer((req, res) => {
                 }
 
                 const user = sessionCheck.user;
+                const clearedActiveSession = clearActiveSessionIfCurrent(user, data.token, data.sessionId, data.deviceId);
                 updateUserActivity(user, clientIp);
                 fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
                 appendAccessLog({
@@ -513,7 +642,7 @@ const server = http.createServer((req, res) => {
                 });
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: true }));
+                res.end(JSON.stringify({ success: true, clearedActiveSession }));
             } catch (err) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: false, error: 'Invalid request' }));
@@ -527,9 +656,10 @@ const server = http.createServer((req, res) => {
         const file = parsedUrl.searchParams.get('file');
         const token = parsedUrl.searchParams.get('token');
         const deviceId = parsedUrl.searchParams.get('deviceId');
+        const sessionId = parsedUrl.searchParams.get('sessionId');
 
         const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-        const sessionCheck = verifyProtectedSession(users, user, token, deviceId, clientIp, req);
+        const sessionCheck = verifyActiveProtectedSession(users, user, token, sessionId, deviceId, clientIp, req);
         if (!sessionCheck.ok) {
             fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
             res.writeHead(sessionCheck.status); return res.end(sessionCheck.error);
@@ -550,7 +680,7 @@ const server = http.createServer((req, res) => {
             try {
                 const data = JSON.parse(body);
                 const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-                const sessionCheck = verifyProtectedSession(users, data.user, data.token, data.deviceId, clientIp, req);
+                const sessionCheck = verifyActiveProtectedSession(users, data.user, data.token, data.sessionId, data.deviceId, clientIp, req);
                 if (!sessionCheck.ok) {
                     fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
                     res.writeHead(sessionCheck.status); return res.end(sessionCheck.error);
@@ -853,15 +983,16 @@ const server = http.createServer((req, res) => {
         const user = parsedUrl.searchParams.get('user');
         const token = parsedUrl.searchParams.get('token');
         const deviceId = parsedUrl.searchParams.get('deviceId');
+        const sessionId = parsedUrl.searchParams.get('sessionId');
 
-        if (!file || !user || !token) {
+        if (!file || !user || !token || !sessionId) {
             res.writeHead(401);
             return res.end('Unauthorized: Missing session credentials');
         }
 
         try {
             const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-            const sessionCheck = verifyProtectedSession(users, user, token, deviceId, clientIp, req);
+            const sessionCheck = verifyActiveProtectedSession(users, user, token, sessionId, deviceId, clientIp, req);
 
             if (!sessionCheck.ok) {
                 fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));

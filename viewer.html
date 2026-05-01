@@ -323,19 +323,46 @@
             }
         }
 
+        function clearAuthSession() {
+            try {
+                localStorage.removeItem('session_token');
+                localStorage.removeItem('session_id');
+                localStorage.removeItem('saved_password');
+            } catch (e) {
+                console.warn('Auth session clear unavailable:', e);
+            }
+        }
+
+        let sessionTerminated = false;
+        let heartbeatTimer = null;
+
+        function handleSessionTerminated(message) {
+            if (sessionTerminated) return;
+            sessionTerminated = true;
+            if (heartbeatTimer) clearInterval(heartbeatTimer);
+            clearAuthSession();
+
+            const pdf = document.getElementById('pdf-container');
+            if (pdf) pdf.innerHTML = '';
+            const loader = document.getElementById('loader');
+            loader.style.display = 'block';
+            loader.innerText = message || 'This account was opened somewhere else. Redirecting to login...';
+            setTimeout(() => { window.location.href = 'index.html'; }, 1500);
+        }
+
         let announcementTimer = null;
 
-        function dismissAnnouncement(announcementId, username, activeToken, activeDeviceId) {
-            if (!announcementId || !username || !activeToken || !activeDeviceId) return;
+        function dismissAnnouncement(announcementId, username, activeToken, activeSessionId, activeDeviceId) {
+            if (!announcementId || !username || !activeToken || !activeSessionId || !activeDeviceId) return;
 
             fetch('/api/announcement/dismiss', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, token: activeToken, deviceId: activeDeviceId, announcementId })
+                body: JSON.stringify({ username, token: activeToken, sessionId: activeSessionId, deviceId: activeDeviceId, announcementId })
             }).catch(() => {});
         }
 
-        function showAnnouncementToast(announcement, username, activeToken, activeDeviceId) {
+        function showAnnouncementToast(announcement, username, activeToken, activeSessionId, activeDeviceId) {
             if (!announcement || !announcement.id || !announcement.message) return;
 
             const existing = document.getElementById('siteAnnouncement');
@@ -354,7 +381,7 @@
 
             const close = () => {
                 toast.classList.remove('active');
-                dismissAnnouncement(announcement.id, username, activeToken, activeDeviceId);
+                dismissAnnouncement(announcement.id, username, activeToken, activeSessionId, activeDeviceId);
                 setTimeout(() => toast.remove(), 240);
             };
 
@@ -363,15 +390,15 @@
             announcementTimer = setTimeout(close, announcement.durationMs || 15000);
         }
 
-        async function loadAnnouncement(username, activeToken, activeDeviceId) {
-            if (!username || !activeToken || !activeDeviceId) return;
+        async function loadAnnouncement(username, activeToken, activeSessionId, activeDeviceId) {
+            if (!username || !activeToken || !activeSessionId || !activeDeviceId) return;
 
             try {
-                const response = await fetch(`/api/announcement?user=${encodeURIComponent(username)}&token=${encodeURIComponent(activeToken)}&deviceId=${encodeURIComponent(activeDeviceId)}`);
+                const response = await fetch(`/api/announcement?user=${encodeURIComponent(username)}&token=${encodeURIComponent(activeToken)}&sessionId=${encodeURIComponent(activeSessionId)}&deviceId=${encodeURIComponent(activeDeviceId)}`);
                 if (!response.ok) return;
                 const data = await response.json();
                 if (data.success && data.announcement) {
-                    showAnnouncementToast(data.announcement, username, activeToken, activeDeviceId);
+                    showAnnouncementToast(data.announcement, username, activeToken, activeSessionId, activeDeviceId);
                 }
             } catch (e) {}
         }
@@ -380,11 +407,16 @@
         const fileName = urlParams.get('file');
         const user = urlParams.get('user');
         const tokenFromQuery = urlParams.get('token');
+        const sessionIdFromQuery = urlParams.get('sessionId');
         const token = tokenFromQuery || safeStorageGet('session_token');
+        const sessionId = sessionIdFromQuery || safeStorageGet('session_id');
         const storedUser = safeStorageGet('saved_username');
 
         if (tokenFromQuery) {
             safeStorageSet('session_token', tokenFromQuery);
+        }
+        if (sessionIdFromQuery) {
+            safeStorageSet('session_id', sessionIdFromQuery);
         }
         if (user) {
             safeStorageSet('saved_username', user);
@@ -648,61 +680,37 @@
             }
         });
 
-        async function refreshSessionToken() {
-            const savedPassword = safeStorageGet('saved_password');
-            if (!user || !savedPassword) return null;
-
-            const response = await fetch('/api/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    username: user,
-                    password: savedPassword,
-                    pdfVersion: fileName,
-                    silentRefresh: true,
-                    deviceId: getOrCreateDeviceId(),
-                    deviceLabel: getDeviceLabel()
-                })
-            });
-
-            const data = await response.json();
-            if (!data.success || !data.token) {
-                throw new Error(data.error || 'Session refresh failed');
-            }
-
-            safeStorageSet('saved_username', user);
-            safeStorageSet('session_token', data.token);
-            return data.token;
-        }
-
         async function buildViewerSession() {
-            let activeToken = token;
+            const activeToken = token;
+            const activeSessionId = sessionId;
             if (!fileName || !user) {
                 throw new Error('Missing viewer context');
             }
-
-            if (!activeToken) {
-                activeToken = await refreshSessionToken();
+            if (!activeToken || !activeSessionId) {
+                throw new Error('Missing active session');
             }
 
             const deviceId = getOrCreateDeviceId();
             return {
                 token: activeToken,
+                sessionId: activeSessionId,
                 deviceId,
-                pdfUrl: '/api/document?file=' + encodeURIComponent(fileName) + '&user=' + encodeURIComponent(user) + '&token=' + encodeURIComponent(activeToken) + '&deviceId=' + encodeURIComponent(deviceId)
+                heartbeatMs: 8000,
+                pdfUrl: '/api/document?file=' + encodeURIComponent(fileName) + '&user=' + encodeURIComponent(user) + '&token=' + encodeURIComponent(activeToken) + '&sessionId=' + encodeURIComponent(activeSessionId) + '&deviceId=' + encodeURIComponent(deviceId)
             };
         }
 
         let closeSignalSent = false;
 
-        function sendCloseSignal(activeToken) {
-            if (closeSignalSent || !user || !activeToken) return;
+        function sendCloseSignal(activeToken, activeSessionId, activeDeviceId) {
+            if (closeSignalSent || !user || !activeToken || !activeSessionId || !activeDeviceId) return;
             closeSignalSent = true;
 
             const payload = JSON.stringify({
                 username: user,
                 token: activeToken,
-                deviceId: getOrCreateDeviceId(),
+                sessionId: activeSessionId,
+                deviceId: activeDeviceId,
                 pdfVersion: fileName
             });
 
@@ -724,12 +732,13 @@
             try {
                 const session = await buildViewerSession();
                 const activeToken = session.token;
+                const activeSessionId = session.sessionId;
                 const activeDeviceId = session.deviceId;
                 const pdfUrl = session.pdfUrl;
-                loadAnnouncement(user, activeToken, activeDeviceId);
+                loadAnnouncement(user, activeToken, activeSessionId, activeDeviceId);
 
-                window.addEventListener('pagehide', () => sendCloseSignal(activeToken));
-                window.addEventListener('beforeunload', () => sendCloseSignal(activeToken));
+                window.addEventListener('pagehide', () => sendCloseSignal(activeToken, activeSessionId, activeDeviceId));
+                window.addEventListener('beforeunload', () => sendCloseSignal(activeToken, activeSessionId, activeDeviceId));
 
                 // Configure PDF.js worker
                 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
@@ -744,23 +753,33 @@
                     // Fetch full Cloud Annotations object for this document
                     let serverAnnotations = {};
                     try {
-                        const annRes = await fetch(`/api/annotations?file=${encodeURIComponent(fileName)}&user=${encodeURIComponent(user)}&token=${encodeURIComponent(activeToken)}&deviceId=${encodeURIComponent(activeDeviceId)}`);
+                        const annRes = await fetch(`/api/annotations?file=${encodeURIComponent(fileName)}&user=${encodeURIComponent(user)}&token=${encodeURIComponent(activeToken)}&sessionId=${encodeURIComponent(activeSessionId)}&deviceId=${encodeURIComponent(activeDeviceId)}`);
                         if (annRes.ok) serverAnnotations = await annRes.json();
                     } catch(e) { console.error('Cloud load fail', e); }
 
-                    // Heartbeat to keep user "Online" on admin dashboard
-                    setInterval(() => {
-                        fetch('/api/heartbeat', {
-                            method: 'POST',
-                            headers: {'Content-Type':'application/json'},
-                            body: JSON.stringify({
-                                username: user,
-                                token: activeToken,
-                                deviceId: getOrCreateDeviceId(),
-                                deviceLabel: getDeviceLabel()
-                            })
-                        }).catch(()=>{});
-                    }, 20000);
+                    const runHeartbeat = async () => {
+                        try {
+                            const response = await fetch('/api/heartbeat', {
+                                method: 'POST',
+                                headers: {'Content-Type':'application/json'},
+                                body: JSON.stringify({
+                                    username: user,
+                                    token: activeToken,
+                                    sessionId: activeSessionId,
+                                    deviceId: activeDeviceId,
+                                    deviceLabel: getDeviceLabel()
+                                })
+                            });
+                            const data = await response.json().catch(() => ({}));
+                            if (!response.ok || data.success === false) {
+                                handleSessionTerminated(data.error === 'SESSION_REPLACED'
+                                    ? 'This account was opened somewhere else. Redirecting to login...'
+                                    : 'Session expired. Redirecting to login...');
+                            }
+                        } catch(e) {}
+                    };
+                    heartbeatTimer = setInterval(runHeartbeat, session.heartbeatMs || 8000);
+                    runHeartbeat();
 
                     const pageInput = document.getElementById('pageNumberInput');
                     const totalPagesLabel = document.getElementById('totalPagesLabel');
@@ -827,7 +846,7 @@
                                     fetch('/api/annotations', {
                                         method: 'POST',
                                         headers: {'Content-Type': 'application/json'},
-                                        body: JSON.stringify({ user, token: activeToken, file: fileName, page: pageNum, dataUrl: savedData })
+                                        body: JSON.stringify({ user, token: activeToken, sessionId: activeSessionId, deviceId: activeDeviceId, file: fileName, page: pageNum, dataUrl: savedData })
                                     }).catch(()=>{});
                                 }
                             }
@@ -840,7 +859,7 @@
 
                             document.getElementById('pdf-container').appendChild(container);
                             viewObserver.observe(container);
-                            setupOnDemandDrawing(container, overlayImg, viewport1, pageNum, activeToken);
+                            setupOnDemandDrawing(container, overlayImg, viewport1, pageNum, activeToken, activeSessionId, activeDeviceId);
                         }
 
                         renderZoom();
@@ -883,31 +902,17 @@
                 }, async function (reason) {
                     console.error(reason);
                     const message = reason && reason.message ? reason.message : String(reason || '');
-                    if (message.includes('401')) {
-                        try {
-                            const refreshedToken = await refreshSessionToken();
-                            const retryParams = new URLSearchParams({ file: fileName, user: user, token: refreshedToken });
-                            window.location.replace('viewer.html?' + retryParams.toString());
-                            return;
-                        } catch (refreshError) {
-                            console.error('Session refresh failed', refreshError);
-                            safeStorageClear();
-                            document.getElementById('loader').innerText = 'Session expired. Redirecting to login...';
-                            setTimeout(() => { window.location.href = 'index.html'; }, 1500);
-                            return;
-                        }
+                    if (message.includes('401') || message.includes('403') || message.includes('409')) {
+                        handleSessionTerminated(message.includes('409')
+                            ? 'This account was opened somewhere else. Redirecting to login...'
+                            : 'Session expired. Redirecting to login...');
+                        return;
                     }
-                    if (message.includes('403')) {
-                        document.getElementById('loader').innerText = "Access Denied: Your account has been blocked.";
-                    } else {
-                        document.getElementById('loader').innerText = "Failed to load secure document.";
-                    }
+                    document.getElementById('loader').innerText = "Failed to load secure document.";
                 });
             } catch (error) {
                 console.error('Viewer startup failed', error);
-                safeStorageClear();
-                document.getElementById('loader').innerText = 'Session expired. Redirecting to login...';
-                setTimeout(() => { window.location.href = 'index.html'; }, 1500);
+                handleSessionTerminated('Session expired. Redirecting to login...');
             }
         }
 
@@ -918,7 +923,7 @@
             startViewer();
 
 
-            function setupOnDemandDrawing(container, overlayImg, viewport, pageNum) {
+            function setupOnDemandDrawing(container, overlayImg, viewport, pageNum, activeToken, activeSessionId, activeDeviceId) {
                 let activeCanvas = null;
                 let activeCtx = null;
                 let isDrawing = false;
@@ -1007,8 +1012,9 @@
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({
                             user: user,
-                            token: token,
-                            deviceId: getOrCreateDeviceId(),
+                            token: activeToken,
+                            sessionId: activeSessionId,
+                            deviceId: activeDeviceId,
                             file: fileName,
                             page: pageNum,
                             dataUrl: dataUrl

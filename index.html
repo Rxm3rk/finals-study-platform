@@ -128,6 +128,44 @@
             letter-spacing: 0.01em;
         }
 
+        .access-note {
+            margin-bottom: 1.75rem;
+            padding: 1rem 1rem 1.05rem;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            border-radius: 18px;
+            background: linear-gradient(135deg, rgba(248, 250, 252, 0.94), rgba(255, 255, 255, 0.78));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 14px 35px rgba(15, 23, 42, 0.08);
+        }
+
+        .access-note-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            margin-bottom: 0.55rem;
+            padding: 0.25rem 0.55rem;
+            border-radius: 999px;
+            background: #111111;
+            color: #ffffff;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .access-note-title {
+            margin-bottom: 0.3rem;
+            font-size: 1.03rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            color: var(--text-main);
+        }
+
+        .access-note-text {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            line-height: 1.55;
+        }
+
         /* Bottom CTA */
         .bottom-cta {
             text-align: center;
@@ -575,9 +613,11 @@
             <button class="modal-close" onclick="closeModal()">&times;</button>
             <h2 class="modal-title" style="margin-bottom: 1rem;">Access the Bank</h2>
             
-            <p style="font-size: 0.92rem; color: var(--text-secondary); margin-bottom: 1.75rem; line-height: 1.55;">
-                Please write down your C3 username so that only our group gets access to it. We don't want others to know because maybe the college will get it and they will bring new questions and all that... so only write down your C3 username so that we won't exclude you from the access.
-            </p>
+            <div class="access-note">
+                <div class="access-note-badge">Now public</div>
+                <div class="access-note-title">Sign up to request access</div>
+                <div class="access-note-text">Create an account with your C3 username. Access is reviewed before the question bank opens, so only approved group members can continue.</div>
+            </div>
 
             <form id="accessForm" onsubmit="handleFormSubmit(event)">
                 <div style="display: flex; gap: 10px; margin-bottom: 1.5rem;">

@@ -16,6 +16,11 @@ process.on('unhandledRejection', (reason, promise) => {
 const PORT = process.env.PORT || 3000;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const TELEGRAM_WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
+const TELEGRAM_ALLOWED_USER_IDS = (process.env.TELEGRAM_ALLOWED_USER_IDS || '')
+    .split(',')
+    .map(id => id.trim())
+    .filter(Boolean);
 // Dedicated Volume Persistent Storage Mapping
 const VOL_PATH = '/app/data';
 const IS_PROD_VOL = fs.existsSync(VOL_PATH);
@@ -126,44 +131,23 @@ function getAdminPassword() {
     return process.env.ADMIN_PASSWORD || 'rxm3rk_admin';
 }
 
-function sendTelegramRegistrationNotification(user) {
-    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
+function sendTelegramApiRequest(method, payload, warningLabel = 'Telegram request') {
+    if (!TELEGRAM_BOT_TOKEN) return;
 
     try {
-        const summary = user.registrationClientSummary || {};
-        const lines = [
-            'New user registered',
-            `Username: ${user.username}`,
-            `Time: ${user.createdAt}`,
-            `IP: ${user.ip || 'Unknown'}`
-        ];
-
-        if (summary.deviceLabel || summary.platform || summary.timezone || summary.screen || summary.viewport) {
-            lines.push(
-                `Device: ${summary.deviceLabel || 'Unknown'}`,
-                `Platform: ${summary.platform || 'Unknown'}`,
-                `Timezone: ${summary.timezone || 'Unknown'}`,
-                `Screen: ${summary.screen || 'Unknown'}`,
-                `Viewport: ${summary.viewport || 'Unknown'}`
-            );
-        }
-
-        const payload = JSON.stringify({
-            chat_id: TELEGRAM_CHAT_ID,
-            text: lines.join('\n')
-        });
+        const body = JSON.stringify(payload);
         const request = https.request({
             hostname: 'api.telegram.org',
-            path: `/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
+            path: `/bot${TELEGRAM_BOT_TOKEN}/${method}`,
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(payload)
+                'Content-Length': Buffer.byteLength(body)
             }
         }, response => {
             response.resume();
             if (response.statusCode < 200 || response.statusCode >= 300) {
-                console.warn(`[WARN] Telegram registration notification failed with status ${response.statusCode}`);
+                console.warn(`[WARN] ${warningLabel} failed with status ${response.statusCode}`);
             }
         });
 
@@ -171,12 +155,92 @@ function sendTelegramRegistrationNotification(user) {
             request.destroy(new Error('Telegram request timed out'));
         });
         request.on('error', error => {
-            console.warn('[WARN] Telegram registration notification failed:', error.message);
+            console.warn(`[WARN] ${warningLabel} failed:`, error.message);
         });
-        request.end(payload);
+        request.end(body);
     } catch (error) {
-        console.warn('[WARN] Telegram registration notification failed:', error.message);
+        console.warn(`[WARN] ${warningLabel} failed:`, error.message);
     }
+}
+
+function sendTelegramRegistrationNotification(user) {
+    if (!TELEGRAM_CHAT_ID) return;
+
+    const summary = user.registrationClientSummary || {};
+    const lines = [
+        'New user registered',
+        `Username: ${user.username}`,
+        `Time: ${user.createdAt}`,
+        `IP: ${user.ip || 'Unknown'}`
+    ];
+
+    if (summary.deviceLabel || summary.platform || summary.timezone || summary.screen || summary.viewport) {
+        lines.push(
+            `Device: ${summary.deviceLabel || 'Unknown'}`,
+            `Platform: ${summary.platform || 'Unknown'}`,
+            `Timezone: ${summary.timezone || 'Unknown'}`,
+            `Screen: ${summary.screen || 'Unknown'}`,
+            `Viewport: ${summary.viewport || 'Unknown'}`
+        );
+    }
+
+    sendTelegramApiRequest('sendMessage', {
+        chat_id: TELEGRAM_CHAT_ID,
+        text: lines.join('\n')
+    }, 'Telegram registration notification');
+}
+
+function sendTelegramPendingDeviceNotification(user, device) {
+    if (!TELEGRAM_CHAT_ID || !device.telegramApprovalToken) return;
+
+    const summary = device.clientSummary || {};
+    const lines = [
+        'Device approval needed',
+        `Username: ${user.username}`,
+        `Device: ${device.label || summary.deviceLabel || 'Unknown'}`,
+        `IP: ${device.lastIp || user.ip || 'Unknown'}`
+    ];
+
+    if (summary.platform || summary.timezone || summary.screen || summary.viewport) {
+        lines.push(
+            `Platform: ${summary.platform || 'Unknown'}`,
+            `Timezone: ${summary.timezone || 'Unknown'}`,
+            `Screen: ${summary.screen || 'Unknown'}`,
+            `Viewport: ${summary.viewport || 'Unknown'}`
+        );
+    }
+
+    if (device.requestedPdfVersion) {
+        lines.push(`PDF: ${device.requestedPdfVersion}`);
+    }
+
+    sendTelegramApiRequest('sendMessage', {
+        chat_id: TELEGRAM_CHAT_ID,
+        text: lines.join('\n'),
+        reply_markup: {
+            inline_keyboard: [[
+                { text: 'Approve', callback_data: `approve:${device.telegramApprovalToken}` },
+                { text: 'Reject', callback_data: `reject:${device.telegramApprovalToken}` }
+            ]]
+        }
+    }, 'Telegram pending device notification');
+}
+
+function answerTelegramCallback(callbackQueryId, text) {
+    if (!callbackQueryId) return;
+    sendTelegramApiRequest('answerCallbackQuery', {
+        callback_query_id: callbackQueryId,
+        text
+    }, 'Telegram callback answer');
+}
+
+function editTelegramCallbackMessage(message, text) {
+    if (!message || !message.chat || !message.message_id) return;
+    sendTelegramApiRequest('editMessageText', {
+        chat_id: message.chat.id,
+        message_id: message.message_id,
+        text
+    }, 'Telegram callback message edit');
 }
 
 function limitString(value, maxLength = 160) {
@@ -298,6 +362,65 @@ function normalizeDeviceId(deviceId) {
     return deviceId.trim().slice(0, 80);
 }
 
+function approvePendingDevice(users, username, deviceId, actor, clientIp) {
+    const user = users.find(u => u.username === username);
+    if (!user) return { success: false, status: 404, error: 'User not found' };
+
+    ensureSecurityFields(user);
+    const normalizedDeviceId = normalizeDeviceId(deviceId);
+    const pendingIndex = user.pendingDevices.findIndex(device => device.id === normalizedDeviceId);
+    if (pendingIndex === -1) return { success: false, status: 404, error: 'Pending device not found' };
+    if (user.devices.length >= MAX_DEVICES_PER_USER) return { success: false, status: 400, error: 'Device limit reached' };
+
+    const [pendingDevice] = user.pendingDevices.splice(pendingIndex, 1);
+    pendingDevice.approvedAt = new Date().toISOString();
+    pendingDevice.approvedBy = actor;
+    delete pendingDevice.status;
+    delete pendingDevice.telegramApprovalToken;
+    delete pendingDevice.telegramApprovalRequestedAt;
+    delete pendingDevice.telegramApprovalNotifiedAt;
+    user.devices.push(pendingDevice);
+    recordSecurityEvent(user, 'admin_approved_device', {
+        ip: clientIp,
+        deviceId: normalizedDeviceId,
+        clientSummary: pendingDevice.clientSummary || null
+    });
+
+    return { success: true, user, device: pendingDevice };
+}
+
+function rejectPendingDevice(users, username, deviceId, actor, clientIp) {
+    const user = users.find(u => u.username === username);
+    if (!user) return { success: false, status: 404, error: 'User not found' };
+
+    ensureSecurityFields(user);
+    const normalizedDeviceId = normalizeDeviceId(deviceId);
+    const pendingIndex = user.pendingDevices.findIndex(device => device.id === normalizedDeviceId);
+    if (pendingIndex === -1) return { success: false, status: 404, error: 'Pending device not found' };
+
+    const [pendingDevice] = user.pendingDevices.splice(pendingIndex, 1);
+    recordSecurityEvent(user, 'admin_rejected_device', {
+        ip: clientIp,
+        deviceId: normalizedDeviceId,
+        actor,
+        clientSummary: pendingDevice.clientSummary || null
+    });
+
+    return { success: true, user, device: pendingDevice };
+}
+
+function findPendingDeviceByTelegramToken(users, token) {
+    if (!token) return null;
+
+    for (const user of users) {
+        ensureSecurityFields(user);
+        const device = user.pendingDevices.find(pendingDevice => pendingDevice.telegramApprovalToken === token);
+        if (device) return { user, device };
+    }
+
+    return null;
+}
+
 function verifyUserAccess(user, clientIp, req, deviceId, data = {}) {
     ensureSecurityFields(user);
 
@@ -334,6 +457,9 @@ function verifyUserAccess(user, clientIp, req, deviceId, data = {}) {
     if (pendingDevice) {
         Object.assign(pendingDevice, pendingRecord);
     } else {
+        pendingRecord.telegramApprovalToken = crypto.randomBytes(16).toString('hex');
+        pendingRecord.telegramApprovalRequestedAt = new Date().toISOString();
+        pendingRecord.telegramNotificationPending = true;
         user.pendingDevices.unshift(pendingRecord);
         user.pendingDevices = user.pendingDevices.slice(0, 10);
     }
@@ -643,7 +769,15 @@ const server = http.createServer((req, res) => {
 
                 const accessCheck = verifyUserAccess(user, clientIp, req, data.deviceId, data);
                 if (!accessCheck.ok) {
+                    const pendingDeviceToNotify = user.pendingDevices.find(device => device.telegramNotificationPending);
+                    if (pendingDeviceToNotify) {
+                        delete pendingDeviceToNotify.telegramNotificationPending;
+                        pendingDeviceToNotify.telegramApprovalNotifiedAt = new Date().toISOString();
+                    }
                     fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+                    if (pendingDeviceToNotify) {
+                        sendTelegramPendingDeviceNotification(user, pendingDeviceToNotify);
+                    }
                     res.writeHead(accessCheck.status, { 'Content-Type': 'application/json' });
                     return res.end(JSON.stringify({ success: false, error: accessCheck.error }));
                 }
@@ -883,35 +1017,12 @@ const server = http.createServer((req, res) => {
                 const data = JSON.parse(body);
                 const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
                 users.forEach(user => ensureSecurityFields(user));
-                const user = users.find(u => u.username === data.username);
+                const result = approvePendingDevice(users, data.username, data.deviceId, 'admin', clientIp);
 
-                if (!user) {
-                    res.writeHead(404, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ success: false, error: 'User not found' }));
+                if (!result.success) {
+                    res.writeHead(result.status, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: result.error }));
                 }
-
-                const deviceId = normalizeDeviceId(data.deviceId);
-                const pendingIndex = user.pendingDevices.findIndex(device => device.id === deviceId);
-                if (pendingIndex === -1) {
-                    res.writeHead(404, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ success: false, error: 'Pending device not found' }));
-                }
-
-                if (user.devices.length >= MAX_DEVICES_PER_USER) {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ success: false, error: 'Device limit reached' }));
-                }
-
-                const [pendingDevice] = user.pendingDevices.splice(pendingIndex, 1);
-                pendingDevice.approvedAt = new Date().toISOString();
-                pendingDevice.approvedBy = 'admin';
-                delete pendingDevice.status;
-                user.devices.push(pendingDevice);
-                recordSecurityEvent(user, 'admin_approved_device', {
-                    ip: clientIp,
-                    deviceId,
-                    clientSummary: pendingDevice.clientSummary || null
-                });
 
                 fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
                 res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -939,26 +1050,12 @@ const server = http.createServer((req, res) => {
                 const data = JSON.parse(body);
                 const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
                 users.forEach(user => ensureSecurityFields(user));
-                const user = users.find(u => u.username === data.username);
+                const result = rejectPendingDevice(users, data.username, data.deviceId, 'admin', clientIp);
 
-                if (!user) {
-                    res.writeHead(404, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ success: false, error: 'User not found' }));
+                if (!result.success) {
+                    res.writeHead(result.status, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: result.error }));
                 }
-
-                const deviceId = normalizeDeviceId(data.deviceId);
-                const pendingIndex = user.pendingDevices.findIndex(device => device.id === deviceId);
-                if (pendingIndex === -1) {
-                    res.writeHead(404, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ success: false, error: 'Pending device not found' }));
-                }
-
-                const [pendingDevice] = user.pendingDevices.splice(pendingIndex, 1);
-                recordSecurityEvent(user, 'admin_rejected_device', {
-                    ip: clientIp,
-                    deviceId,
-                    clientSummary: pendingDevice.clientSummary || null
-                });
 
                 fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
                 res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -966,6 +1063,69 @@ const server = http.createServer((req, res) => {
             } catch (e) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: false, error: 'Invalid request' }));
+            }
+        });
+        return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/telegram/webhook') {
+        if (!TELEGRAM_WEBHOOK_SECRET || req.headers['x-telegram-bot-api-secret-token'] !== TELEGRAM_WEBHOOK_SECRET) {
+            res.writeHead(403);
+            return res.end('Forbidden');
+        }
+
+        let body = '';
+        req.on('data', chunk => body += chunk.toString());
+        req.on('end', () => {
+            try {
+                const update = JSON.parse(body || '{}');
+                const callback = update.callback_query;
+                const fromId = callback && callback.from && String(callback.from.id);
+                const chatId = callback && callback.message && callback.message.chat && String(callback.message.chat.id);
+
+                if (!callback || chatId !== String(TELEGRAM_CHAT_ID) || !TELEGRAM_ALLOWED_USER_IDS.includes(fromId)) {
+                    res.writeHead(200);
+                    return res.end('OK');
+                }
+
+                const match = /^(approve|reject):([a-f0-9]{32})$/.exec(callback.data || '');
+                if (!match) {
+                    answerTelegramCallback(callback.id, 'Invalid action');
+                    res.writeHead(200);
+                    return res.end('OK');
+                }
+
+                const [, action, approvalToken] = match;
+                const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+                users.forEach(user => ensureSecurityFields(user));
+                const pendingMatch = findPendingDeviceByTelegramToken(users, approvalToken);
+
+                if (!pendingMatch) {
+                    answerTelegramCallback(callback.id, 'Already handled or expired');
+                    res.writeHead(200);
+                    return res.end('OK');
+                }
+
+                const actor = `telegram:${fromId}`;
+                const result = action === 'approve'
+                    ? approvePendingDevice(users, pendingMatch.user.username, pendingMatch.device.id, actor, clientIp)
+                    : rejectPendingDevice(users, pendingMatch.user.username, pendingMatch.device.id, actor, clientIp);
+
+                if (result.success) {
+                    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+                    const statusText = action === 'approve' ? 'Approved' : 'Rejected';
+                    answerTelegramCallback(callback.id, `${statusText} ${pendingMatch.user.username}`);
+                    editTelegramCallbackMessage(callback.message, `${statusText} device for ${pendingMatch.user.username}\nDevice: ${pendingMatch.device.label || pendingMatch.device.id}`);
+                } else {
+                    answerTelegramCallback(callback.id, result.error || 'Action failed');
+                }
+
+                res.writeHead(200);
+                res.end('OK');
+            } catch (e) {
+                console.warn('[WARN] Telegram webhook failed:', e.message);
+                res.writeHead(200);
+                res.end('OK');
             }
         });
         return;

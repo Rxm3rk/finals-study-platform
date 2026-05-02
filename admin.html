@@ -364,7 +364,6 @@
         }
 
         .online-badge,
-        .approval-badge,
         .blocked-badge,
         .pill {
             padding: 5px 10px;
@@ -381,15 +380,6 @@
             color: #1b5e20;
         }
 
-        .approval-badge.approved {
-            background: var(--success-soft);
-            color: #1b5e20;
-        }
-
-        .approval-badge.pending {
-            background: var(--warning-soft);
-            color: var(--warning-text);
-        }
 
         .blocked-badge {
             background: var(--danger-soft);
@@ -603,8 +593,8 @@
         <div class="admin-header">
             <div class="admin-title">
                 <h1>Admin Dashboard</h1>
-                <p class="admin-subtitle">Manage approvals, devices, annotations, and access logs.</p>
-                <div id="approval-count" class="notice">Loading approval status...</div>
+                <p class="admin-subtitle">Manage users, devices, annotations, and access logs.</p>
+                <div id="dashboard-status" class="notice">Trusted-device approval enabled · no signup cap</div>
                 <div id="action-notice" class="notice"></div>
             </div>
             <div class="admin-actions">
@@ -725,13 +715,11 @@
             const users = data.users || [];
             const now = Date.now();
             const onlineUsers = users.filter(u => (now - (u.lastOnline || 0)) < 60000);
-            const pendingUsers = users.filter(u => u.approved === false);
-            const approvedUsers = users.filter(u => u.approved !== false);
+            const pendingDeviceCount = users.reduce((count, user) => count + (Array.isArray(user.pendingDevices) ? user.pendingDevices.length : 0), 0);
             return {
                 totalUsers: users.length,
                 onlineUsers,
-                pendingUsers,
-                approvedUsers,
+                pendingDeviceCount,
                 annotations: data.annotations || [],
                 logs: data.database || []
             };
@@ -775,8 +763,7 @@
             document.getElementById('summary-grid').innerHTML = [
                 ['Online now', stats.onlineUsers.length, stats.onlineUsers.length ? stats.onlineUsers.map(u => u.username).slice(0, 3).join(', ') : 'Nobody active'],
                 ['Registered', stats.totalUsers, 'Total accounts'],
-                ['Approved', stats.approvedUsers.length, 'No signup cap'],
-                ['Pending', stats.pendingUsers.length, 'Awaiting admin approval'],
+                ['Pending devices', stats.pendingDeviceCount, 'Awaiting trusted-device approval'],
                 ['Annotations', stats.annotations.length, 'Saved annotation files'],
                 ['Access logs', stats.logs.length, latestLog]
             ].map(([label, value, note]) => `<div class="summary-card">
@@ -806,12 +793,6 @@
 
         function renderUsers(data) {
             const users = data.users || [];
-            const stats = getStats(data);
-            const approvalCount = document.getElementById('approval-count');
-            if (approvalCount) {
-                approvalCount.textContent = `${stats.approvedUsers.length} approved users · ${stats.pendingUsers.length} pending approval · no signup cap`;
-            }
-
             if (!users.length) {
                 return '<div class="empty-state">No users found.</div>';
             }
@@ -820,7 +801,6 @@
             const list = users.map(u => {
                 const seenText = formatLastSeen(u.lastOnline);
                 const isBlocked = data.blocked && (data.blocked.includes(u.ip) || data.blocked.includes(u.username));
-                const isApproved = u.approved !== false;
                 const devices = Array.isArray(u.devices) ? u.devices : [];
                 const pendingDevices = Array.isArray(u.pendingDevices) ? u.pendingDevices : [];
                 const securityEvents = Array.isArray(u.securityEvents) ? u.securityEvents.slice(0, 4) : [];
@@ -839,15 +819,12 @@
                 const banButton = isBlocked ?
                     `<button class="btn btn-secondary btn-small" onclick='unban(${JSON.stringify(u.username)})'>Unban</button>` :
                     `<button class="btn btn-danger btn-small" onclick='banUser(${JSON.stringify(u.username)})'>Ban</button>`;
-                const approveButton = isApproved ? '' : `<button class="btn btn-success btn-small" onclick='approveUser(${JSON.stringify(u.username)})'>Approve</button>`;
-
                 return `<article class="user-card ${isSelected ? 'selected' : ''}">
                     <div class="user-main">
                         <div>
                             <div class="item-title-row">
                                 <input type="checkbox" ${isSelected ? 'checked' : ''} onclick='toggleSelection(${JSON.stringify('users')}, ${JSON.stringify(u.username)})' aria-label="Select ${escapeHtml(u.username)}">
                                 <span class="item-title">${escapeHtml(u.username)}</span>
-                                <span class="approval-badge ${isApproved ? 'approved' : 'pending'}">${isApproved ? 'APPROVED' : 'PENDING'}</span>
                                 ${isBlocked ? '<span class="blocked-badge">BANNED</span>' : ''}
                                 ${pendingDevices.length ? `<span class="pill">${pendingDevices.length} pending device${pendingDevices.length === 1 ? '' : 's'}</span>` : ''}
                             </div>
@@ -859,7 +836,6 @@
                             </div>
                         </div>
                         <div class="item-actions">
-                            ${approveButton}
                             <button class="btn btn-blue btn-small" onclick='resetDevices(${JSON.stringify(u.username)})'>Reset devices</button>
                             ${banButton}
                             <button class="btn btn-secondary btn-small" onclick='toggleUserDetails(${JSON.stringify(u.username)})'>${isOpen ? 'Hide details' : 'Details'}</button>
@@ -882,7 +858,7 @@
         function renderUsersAndPresence(data) {
             const stats = getStats(data);
             const body = `<div style="margin-bottom:0.85rem;">${renderOnlineUsers(data)}</div>${renderUsers(data)}`;
-            return renderSection('users', 'Users & approvals', `${stats.totalUsers} registered · ${stats.pendingUsers.length} pending · ${stats.onlineUsers.length} online`, body);
+            return renderSection('users', 'Users & devices', `${stats.totalUsers} registered · ${stats.pendingDeviceCount} pending devices · ${stats.onlineUsers.length} online`, body);
         }
 
         function renderAnnotations(data) {
@@ -1322,25 +1298,6 @@
             }
         }
 
-        async function approveUser(username) {
-            const pwd = document.getElementById('pwd').value;
-            try {
-                const res = await fetch(`/api/admin/user/approve?pwd=${encodeURIComponent(pwd)}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username })
-                });
-                const data = await res.json();
-                if (res.ok && data.success) {
-                    setNotice(`${username} approved.`, 'success');
-                    await refreshAdminSnapshot();
-                } else {
-                    setNotice(data.error || 'Failed to approve user.', 'error');
-                }
-            } catch(e) {
-                setNotice('Error approving user.', 'error');
-            }
-        }
 
         async function approveDevice(username, deviceId) {
             const pwd = document.getElementById('pwd').value;

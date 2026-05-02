@@ -616,7 +616,7 @@
             <div class="access-note">
                 <div class="access-note-badge">Now public</div>
                 <div class="access-note-title">Open for Stage 5 HMU students</div>
-                <div class="access-note-text">Create an account to request access. Once approved, you can open the question bank and study resources from your trusted device.</div>
+                <div class="access-note-text">Create an account, then sign in from your trusted device to open the question bank and study resources.</div>
             </div>
 
             <form id="accessForm" onsubmit="handleFormSubmit(event)">
@@ -991,7 +991,7 @@
                             alert(regData.error || 'Registration failed');
                             btn.innerText = originalText; btn.disabled = false; return;
                         }
-                        alert('Registration submitted. Please wait for admin approval before accessing the question bank.');
+                        alert('Account created. Please log in from your trusted device to access the question bank.');
                         btn.innerText = originalText;
                         btn.disabled = false;
                         return;

@@ -123,10 +123,6 @@ function getAdminPassword() {
     return process.env.ADMIN_PASSWORD || 'rxm3rk_admin';
 }
 
-function isUserApproved(user) {
-    return user.approved !== false;
-}
-
 function limitString(value, maxLength = 160) {
     if (typeof value !== 'string') return '';
     return value.slice(0, maxLength);
@@ -204,16 +200,7 @@ function buildDeviceRecord(deviceId, clientIp, req, data, existingDevice) {
     };
 }
 
-function ensureSecurityFields(user, defaultApproved = true) {
-    if (typeof user.approved !== 'boolean') {
-        user.approved = defaultApproved;
-    }
-    if (!Object.prototype.hasOwnProperty.call(user, 'approvedAt')) {
-        user.approvedAt = user.approved ? (user.createdAt || null) : null;
-    }
-    if (!Object.prototype.hasOwnProperty.call(user, 'approvedBy')) {
-        user.approvedBy = user.approved ? 'legacy' : null;
-    }
+function ensureSecurityFields(user) {
     if (!Array.isArray(user.devices)) {
         user.devices = [];
     }
@@ -230,10 +217,6 @@ function ensureSecurityFields(user, defaultApproved = true) {
         user.registrationClientDetails = null;
     }
     return user;
-}
-
-function countApprovedUsers(users) {
-    return users.filter(user => isUserApproved(user)).length;
 }
 
 function recordSecurityEvent(user, type, details) {
@@ -261,14 +244,6 @@ function normalizeDeviceId(deviceId) {
 
 function verifyUserAccess(user, clientIp, req, deviceId, data = {}) {
     ensureSecurityFields(user);
-
-    if (!isUserApproved(user)) {
-        recordSecurityEvent(user, 'blocked_unapproved_access', {
-            ip: clientIp,
-            clientSummary: summarizeClientDetails(data.clientDetails)
-        });
-        return { ok: false, status: 403, error: 'Account pending admin approval.' };
-    }
 
     const normalizedDeviceId = normalizeDeviceId(deviceId);
     if (!normalizedDeviceId) {
@@ -321,7 +296,7 @@ function findAuthorizedUserBySession(users, username, token) {
     const user = findUserBySession(users, username, token);
     if (!user) return null;
     ensureSecurityFields(user);
-    return isUserApproved(user) ? user : null;
+    return user;
 }
 
 function createActiveSession(user, data, clientIp, req) {
@@ -383,7 +358,7 @@ function verifyActiveProtectedSession(users, username, token, sessionId, deviceI
             ensureSecurityFields(staleUser);
             const normalizedDeviceId = normalizeDeviceId(deviceId);
             const staleDevice = staleUser.devices.find(device => device.id === normalizedDeviceId);
-            if (staleDevice && isUserApproved(staleUser)) {
+            if (staleDevice) {
                 sessionCheck = { ok: true, user: staleUser };
             }
         }
@@ -423,11 +398,6 @@ function verifyProtectedSession(users, username, token, deviceId, clientIp, req)
     }
 
     ensureSecurityFields(user);
-
-    if (!isUserApproved(user)) {
-        recordSecurityEvent(user, 'blocked_unapproved_access', { ip: clientIp });
-        return { ok: false, status: 403, error: 'Account pending admin approval.' };
-    }
 
     const normalizedDeviceId = normalizeDeviceId(deviceId);
     if (!normalizedDeviceId) {
@@ -550,9 +520,6 @@ const server = http.createServer((req, res) => {
                     createdAt: new Date().toISOString(),
                     lastOnline: Date.now(),
                     ip: clientIp,
-                    approved: false,
-                    approvedAt: null,
-                    approvedBy: null,
                     devices: [],
                     pendingDevices: [],
                     registrationClientDetails,
@@ -833,7 +800,6 @@ const server = http.createServer((req, res) => {
                 database: JSON.parse(dbData),
                 blocked: JSON.parse(blockedData),
                 users,
-                approvedUserCount: countApprovedUsers(users),
                 maxDevicesPerUser: MAX_DEVICES_PER_USER,
                 annotations: listAnnotationSummaries(users)
             }));
@@ -844,44 +810,6 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    if (req.method === 'POST' && pathname === '/api/admin/user/approve') {
-        const pwd = parsedUrl.searchParams.get('pwd');
-        const adminPassword = getAdminPassword();
-        if (pwd !== adminPassword) {
-            res.writeHead(401);
-            return res.end('Unauthorized');
-        }
-
-        let body = '';
-        req.on('data', chunk => body += chunk.toString());
-        req.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-                users.forEach(user => ensureSecurityFields(user, user.username === data.username ? false : true));
-                const user = users.find(u => u.username === data.username);
-
-                if (!user) {
-                    res.writeHead(404, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ success: false, error: 'User not found' }));
-                }
-
-
-                user.approved = true;
-                user.approvedAt = new Date().toISOString();
-                user.approvedBy = 'admin';
-                recordSecurityEvent(user, 'admin_approved_user', { ip: clientIp });
-
-                fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: true }));
-            } catch (e) {
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: false, error: 'Invalid request' }));
-            }
-        });
-        return;
-    }
 
     if (req.method === 'POST' && pathname === '/api/admin/user/device/approve') {
         const pwd = parsedUrl.searchParams.get('pwd');

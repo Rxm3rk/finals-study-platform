@@ -7,131 +7,344 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg: #f6f7f8;
+            --surface: rgba(255, 255, 255, 0.86);
+            --surface-strong: #ffffff;
+            --text-main: #111111;
+            --text-secondary: #555555;
+            --text-muted: #888888;
+            --border: rgba(17, 17, 17, 0.08);
+            --border-strong: rgba(17, 17, 17, 0.14);
+            --accent: #000000;
+            --accent-hover: #222222;
+            --danger: #dc3545;
+            --danger-soft: #ffe3e3;
+            --success: #198754;
+            --success-soft: #e8f5e9;
+            --warning-soft: #fff3cd;
+            --warning-text: #8a5a00;
+            --blue: #0d6efd;
+            --shadow: 0 24px 70px rgba(17, 17, 17, 0.08);
+            --radius-lg: 26px;
+            --radius-md: 18px;
+            --radius-sm: 12px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f7f9fa;
-            color: #333;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: radial-gradient(circle at top left, rgba(255, 255, 255, 0.92), transparent 34%), var(--bg);
+            color: var(--text-main);
             margin: 0;
             padding: 2rem;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+            min-height: 100vh;
         }
 
-        .container {
-            width: 100%;
-            max-width: 900px;
-            background: #fff;
-            padding: 2rem;
-            border-radius: 12px;
-            box-shadow: 0 4px 14px rgba(0,0,0,0.05);
-        }
-
-        h1 {
-            font-size: 1.8rem;
-            margin-top: 0;
-            letter-spacing: -0.02em;
-        }
-
-        #login-section {
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-            max-width: 400px;
-            margin: auto;
-            text-align: center;
-        }
-
-        input[type="password"] {
-            padding: 0.8rem;
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            font-size: 1rem;
-            font-family: 'Inter', sans-serif;
+        button,
+        input {
+            font: inherit;
         }
 
         button {
-            padding: 0.8rem 1.5rem;
-            background: #000;
-            color: #fff;
-            border: none;
-            border-radius: 8px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: 0.2s ease;
+            border: 0;
         }
 
-        button:hover {
-            background: #333;
+        .container {
+            width: min(1180px, 100%);
+            margin: 0 auto;
+            background: var(--surface);
+            padding: 2rem;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(18px) saturate(140%);
+        }
+
+        #login-section {
+            max-width: 430px;
+            margin: 8vh auto 0;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        #login-section h1,
+        .admin-title h1 {
+            margin: 0;
+            letter-spacing: -0.04em;
+            line-height: 1.05;
+        }
+
+        #login-section p,
+        .admin-subtitle,
+        .muted {
+            color: var(--text-secondary);
+        }
+
+        input[type="password"] {
+            padding: 0.9rem 1rem;
+            border: 1px solid var(--border-strong);
+            border-radius: var(--radius-sm);
+            font-size: 1rem;
+            background: rgba(255, 255, 255, 0.9);
+            outline: none;
+        }
+
+        input[type="password"]:focus {
+            border-color: var(--accent);
         }
 
         #dashboard {
             display: none;
         }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 1rem;
-            font-size: 0.95rem;
+        .admin-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 1.5rem;
+            margin-bottom: 1.6rem;
         }
 
-        th, td {
-            text-align: left;
-            padding: 1rem;
-            border-bottom: 1px solid #eee;
+        .admin-title {
+            display: grid;
+            gap: 0.35rem;
         }
 
-        th {
-            background-color: #fcfcfc;
-            font-weight: 600;
-            color: #666;
+        .admin-subtitle {
+            margin: 0;
+            font-size: 0.92rem;
         }
 
-        .blocked-badge {
-            background: #ffe3e3;
-            color: #d10000;
-            padding: 4px 8px;
-            border-radius: 99px;
-            font-size: 0.75rem;
-            font-weight: 600;
+        .admin-actions,
+        .item-actions,
+        .bulk-actions,
+        .section-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
         }
 
-        .approval-badge {
-            padding: 4px 8px;
-            border-radius: 99px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            display: inline-block;
-            margin-left: 5px;
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.35rem;
+            padding: 0.72rem 1rem;
+            background: var(--accent);
+            color: #fff;
+            border-radius: 999px;
+            font-weight: 650;
+            font-size: 0.88rem;
+            cursor: pointer;
+            transition: transform 0.18s ease, background 0.18s ease, opacity 0.18s ease;
+            white-space: nowrap;
         }
 
-        .approval-badge.approved {
-            background: #e8f5e9;
-            color: #1b5e20;
+        .btn:hover {
+            background: var(--accent-hover);
+            transform: translateY(-1px);
         }
 
-        .approval-badge.pending {
-            background: #fff3cd;
-            color: #8a5a00;
+        .btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            transform: none;
         }
 
-        .device-summary {
+        .btn-secondary {
+            background: #f1f2f4;
+            color: var(--text-main);
+        }
+
+        .btn-secondary:hover {
+            background: #e8eaed;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: #fff;
+        }
+
+        .btn-danger:hover {
+            background: #bb2d3b;
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: #fff;
+        }
+
+        .btn-success:hover {
+            background: #146c43;
+        }
+
+        .btn-blue {
+            background: var(--blue);
+            color: #fff;
+        }
+
+        .btn-blue:hover {
+            background: #0b5ed7;
+        }
+
+        .btn-small {
+            padding: 0.46rem 0.68rem;
             font-size: 0.76rem;
-            color: #666;
-            margin-top: 0.25rem;
         }
 
-        .security-events {
-            margin-top: 0.35rem;
-            font-size: 0.72rem;
-            color: #777;
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 0.85rem;
+            margin-bottom: 1rem;
+        }
+
+        .summary-card {
+            background: var(--surface-strong);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 1rem;
+            min-height: 104px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .summary-label {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .summary-value {
+            font-size: 1.9rem;
+            letter-spacing: -0.05em;
+            font-weight: 750;
+        }
+
+        .summary-note {
+            color: var(--text-secondary);
+            font-size: 0.82rem;
         }
 
         .status-msg {
-            color: red;
-            margin-top: 10px;
+            color: var(--danger);
+            margin-top: 0.25rem;
             font-size: 0.9rem;
+        }
+
+        .notice {
+            min-height: 1.2rem;
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+        }
+
+        .notice.error {
+            color: var(--danger);
+        }
+
+        .notice.success {
+            color: var(--success);
+        }
+
+        .admin-section {
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            background: rgba(255, 255, 255, 0.72);
+            overflow: hidden;
+            margin-top: 1rem;
+        }
+
+        .section-header {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem 1.1rem;
+            background: transparent;
+            color: var(--text-main);
+            cursor: pointer;
+            text-align: left;
+        }
+
+        .section-header:hover {
+            background: rgba(17, 17, 17, 0.025);
+        }
+
+        .section-title {
+            display: grid;
+            gap: 0.2rem;
+        }
+
+        .section-title strong {
+            font-size: 1rem;
+        }
+
+        .section-title span {
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+            font-weight: 500;
+        }
+
+        .chevron {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            transition: transform 0.18s ease;
+        }
+
+        .admin-section.open .chevron {
+            transform: rotate(180deg);
+        }
+
+        .section-body {
+            display: none;
+            padding: 0 1.1rem 1.1rem;
+        }
+
+        .admin-section.open .section-body {
+            display: block;
+        }
+
+        .section-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.85rem;
+            margin-bottom: 0.85rem;
+            border-radius: var(--radius-sm);
+            background: rgba(246, 247, 248, 0.88);
+            border: 1px solid var(--border);
+        }
+
+        .selection-count {
+            font-size: 0.84rem;
+            color: var(--text-secondary);
+            font-weight: 650;
+        }
+
+        .empty-state {
+            color: var(--text-muted);
+            padding: 1rem;
+            border: 1px dashed var(--border-strong);
+            border-radius: var(--radius-sm);
+            background: rgba(255, 255, 255, 0.56);
+        }
+
+        .online-list {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
         }
 
         .online-dot {
@@ -150,31 +363,125 @@
             100% { opacity: 1; transform: scale(1); }
         }
 
-        .online-badge {
-            background: #e8f5e9;
-            color: #1b5e20;
-            padding: 5px 12px;
-            border-radius: 99px;
-            font-size: 0.8rem;
-            font-weight: 600;
+        .online-badge,
+        .approval-badge,
+        .blocked-badge,
+        .pill {
+            padding: 5px 10px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 700;
             display: inline-flex;
             align-items: center;
+            line-height: 1;
         }
 
+        .online-badge {
+            background: var(--success-soft);
+            color: #1b5e20;
+        }
+
+        .approval-badge.approved {
+            background: var(--success-soft);
+            color: #1b5e20;
+        }
+
+        .approval-badge.pending {
+            background: var(--warning-soft);
+            color: var(--warning-text);
+        }
+
+        .blocked-badge {
+            background: var(--danger-soft);
+            color: #d10000;
+        }
+
+        .pill {
+            background: #f1f2f4;
+            color: var(--text-secondary);
+        }
+
+        .user-list {
+            display: grid;
+            gap: 0.75rem;
+        }
+
+        .user-card,
         .annotation-card {
-            border: 1px solid #eee;
-            border-radius: 10px;
-            padding: 1rem;
-            background: #fcfcfc;
-            margin-bottom: 1rem;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 0.95rem;
+            background: var(--surface-strong);
         }
 
+        .user-card.selected,
+        .annotation-card.selected,
+        tr.selected {
+            outline: 2px solid rgba(13, 110, 253, 0.26);
+            background: rgba(13, 110, 253, 0.035);
+        }
+
+        .user-main,
         .annotation-meta {
             display: flex;
             justify-content: space-between;
             gap: 1rem;
-            align-items: center;
+            align-items: flex-start;
             flex-wrap: wrap;
+        }
+
+        .item-title-row {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            flex-wrap: wrap;
+        }
+
+        .item-title {
+            font-weight: 750;
+            color: var(--text-main);
+        }
+
+        .item-meta {
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+            margin-top: 0.35rem;
+            line-height: 1.45;
+        }
+
+        .details-panel {
+            display: none;
+            margin-top: 0.85rem;
+            padding-top: 0.85rem;
+            border-top: 1px solid var(--border);
+        }
+
+        .details-panel.open {
+            display: block;
+        }
+
+        .detail-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 0.7rem;
+        }
+
+        .detail-box,
+        .device-summary,
+        .security-events {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            padding: 0.65rem;
+            background: #fafafa;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            overflow-wrap: anywhere;
+        }
+
+        .detail-box strong,
+        .device-summary strong,
+        .security-events strong {
+            color: var(--text-main);
         }
 
         .annotation-preview-grid {
@@ -185,8 +492,8 @@
         }
 
         .annotation-preview-tile {
-            border: 1px solid #eee;
-            border-radius: 8px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
             background: #fff;
             padding: 0.75rem;
         }
@@ -195,7 +502,7 @@
             background: linear-gradient(45deg, #f7f7f7 25%, transparent 25%), linear-gradient(-45deg, #f7f7f7 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f7f7f7 75%), linear-gradient(-45deg, transparent 75%, #f7f7f7 75%);
             background-size: 16px 16px;
             background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
-            border-radius: 6px;
+            border-radius: 8px;
             padding: 8px;
             min-height: 110px;
             display: flex;
@@ -208,68 +515,125 @@
             max-height: 140px;
             display: block;
         }
+
+        .table-wrap {
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            background: #fff;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+            min-width: 820px;
+        }
+
+        th,
+        td {
+            text-align: left;
+            padding: 0.85rem;
+            border-bottom: 1px solid var(--border);
+            vertical-align: top;
+        }
+
+        th {
+            background-color: #fbfbfb;
+            font-weight: 750;
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        tr:last-child td {
+            border-bottom: 0;
+        }
+
+        input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+
+        @media (max-width: 760px) {
+            body {
+                padding: 0.85rem;
+            }
+
+            .container {
+                padding: 1rem;
+                border-radius: 20px;
+            }
+
+            .admin-header,
+            .section-toolbar,
+            .user-main,
+            .annotation-meta {
+                align-items: stretch;
+                flex-direction: column;
+            }
+
+            .admin-actions,
+            .item-actions,
+            .bulk-actions,
+            .section-actions {
+                width: 100%;
+            }
+
+            .btn {
+                flex: 1;
+            }
+        }
     </style>
 </head>
 <body>
 
     <div class="container" id="login-section">
         <h1>Admin Access</h1>
-        <p style="color:#666; margin-bottom:1.5rem; font-size: 0.9rem;">Enter the master password to view the database.</p>
+        <p>Enter the master password to view and manage the dashboard.</p>
         <input type="password" id="pwd" placeholder="Enter password" onkeydown="if(event.key === 'Enter') loadData()">
-        <button onclick="loadData()">Unlock Database</button>
+        <button class="btn" onclick="loadData()">Unlock Dashboard</button>
         <div id="error-msg" class="status-msg"></div>
     </div>
 
     <div class="container" id="dashboard">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-            <h1>Live Database Logs</h1>
-            <button onclick="location.reload()" style="background: #efefef; color: #000;">Refresh Data</button>
-        </div>
-
-        <div style="display: flex; gap: 2rem; margin-bottom: 2rem; flex-wrap: wrap;">
-            <div style="flex: 1; min-width: 250px;">
-                <h3>Currently Online</h3>
-                <div id="online-list" style="display:flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;">Loading...</div>
+        <div class="admin-header">
+            <div class="admin-title">
+                <h1>Admin Dashboard</h1>
+                <p class="admin-subtitle">Manage approvals, devices, annotations, and access logs.</p>
+                <div id="approval-count" class="notice">Loading approval status...</div>
+                <div id="action-notice" class="notice"></div>
             </div>
-            <div style="flex: 1; min-width: 250px;">
-                <h3>Registered Users</h3>
-                <div id="approval-count" style="font-size:0.8rem; color:#666; margin-top:-0.25rem;">Loading approval status...</div>
-                <div id="users-list" style="margin-top: 10px; font-size: 0.9rem; color: #555;">Loading...</div>
+            <div class="admin-actions">
+                <button class="btn btn-secondary" onclick="refreshAdminSnapshot(true)">Refresh</button>
             </div>
         </div>
 
-        <hr style="border: none; border-top: 1px solid #eee; margin: 2rem 0;">
-
-        <h3>Saved Annotations</h3>
-        <div id="annotations-list" style="margin-top: 1rem;">Loading...</div>
-
-        <hr style="border: none; border-top: 1px solid #eee; margin: 2rem 0;">
-
-        <h3>Access History</h3>
-        <table>
-            <thead>
-                <tr>
-                    <th>Timestamp</th>
-                    <th>C3 Username</th>
-                    <th>PDF Accessed</th>
-                    <th>IP Address</th>
-                    <th>Action</th>
-                    <th>Controls</th>
-                </tr>
-            </thead>
-            <tbody id="logs-body">
-                <!-- Data goes here -->
-            </tbody>
-        </table>
+        <div id="summary-grid" class="summary-grid"></div>
+        <div id="sections-root"></div>
     </div>
 
     <script>
         let adminData = null;
         let dashboardRefreshTimer = null;
+        let destructiveActionInProgress = false;
         const annotationPreviewCache = new Map();
         const annotationOpenState = new Set();
+        const sectionOpenState = {
+            users: true,
+            annotations: false,
+            logs: false
+        };
+        const userDetailOpenState = new Set();
+        const selectedUsers = new Set();
+        const selectedLogs = new Set();
+        const selectedAnnotations = new Set();
 
         function formatLastSeen(lastOnline) {
+            if (!lastOnline) return 'Unknown';
             const mins = Math.floor((Date.now() - lastOnline) / 60000);
             if (mins < 1) return 'Just now';
             if (mins > 1440) return `${Math.floor(mins / 1440)} days ago`;
@@ -278,7 +642,7 @@
         }
 
         function escapeHtml(value) {
-            return String(value)
+            return String(value ?? '')
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;')
@@ -288,6 +652,28 @@
 
         function buildAnnotationKey(user, file) {
             return `${user}::${file}`;
+        }
+
+        function buildLogKey(log) {
+            return JSON.stringify([
+                log.timestamp || '',
+                log.username || '',
+                log.pdfVersion || null,
+                log.action || 'access'
+            ]);
+        }
+
+        function getSelectionSet(kind) {
+            if (kind === 'users') return selectedUsers;
+            if (kind === 'logs') return selectedLogs;
+            return selectedAnnotations;
+        }
+
+        function setNotice(message, type = '') {
+            const notice = document.getElementById('action-notice');
+            if (!notice) return;
+            notice.textContent = message || '';
+            notice.className = `notice ${type}`.trim();
         }
 
         function formatClientSummary(summary) {
@@ -308,11 +694,11 @@
             const summary = formatClientSummary(device.clientSummary);
             const seen = device.lastSeenAt ? new Date(device.lastSeenAt).toLocaleString() : 'Unknown';
             const first = device.firstSeenAt ? new Date(device.firstSeenAt).toLocaleString() : 'Unknown';
-            return `<div class="device-summary" style="margin-top:0.35rem; padding:0.4rem; background:#fff; border:1px solid #eee; border-radius:6px;">
+            return `<div class="device-summary">
                 <strong>${escapeHtml(device.label || 'Device')}</strong> · ${escapeHtml((device.id || '').slice(-10))}<br>
-                IP: ${escapeHtml(device.lastIp || 'N/A')} · first: ${first} · last: ${seen}
+                IP: ${escapeHtml(device.lastIp || 'N/A')} · first: ${escapeHtml(first)} · last: ${escapeHtml(seen)}
                 ${summary ? `<br>${summary}` : ''}
-                ${device.userAgent ? `<br><span style="word-break:break-word;">UA: ${escapeHtml(device.userAgent)}</span>` : ''}
+                ${device.userAgent ? `<br>UA: ${escapeHtml(device.userAgent)}` : ''}
             </div>`;
         }
 
@@ -335,160 +721,278 @@
             return (adminData?.annotations || []).find(annotation => annotation.user === user && annotation.file === file) || null;
         }
 
-        function renderUsersAndPresence(data) {
-            const usersList = document.getElementById('users-list');
+        function getStats(data) {
+            const users = data.users || [];
+            const now = Date.now();
+            const onlineUsers = users.filter(u => (now - (u.lastOnline || 0)) < 60000);
+            const pendingUsers = users.filter(u => u.approved === false);
+            const approvedUsers = users.filter(u => u.approved !== false);
+            return {
+                totalUsers: users.length,
+                onlineUsers,
+                pendingUsers,
+                approvedUsers,
+                annotations: data.annotations || [],
+                logs: data.database || []
+            };
+        }
+
+        function isSectionOpen(sectionId) {
+            return sectionOpenState[sectionId] !== false;
+        }
+
+        function toggleSection(sectionId) {
+            sectionOpenState[sectionId] = !isSectionOpen(sectionId);
+            renderDashboard();
+        }
+
+        function toggleUserDetails(username) {
+            if (userDetailOpenState.has(username)) {
+                userDetailOpenState.delete(username);
+            } else {
+                userDetailOpenState.add(username);
+            }
+            renderDashboard();
+        }
+
+        function renderSection(id, title, meta, body) {
+            const open = isSectionOpen(id);
+            return `<section class="admin-section ${open ? 'open' : ''}">
+                <button class="section-header" onclick='toggleSection(${JSON.stringify(id)})'>
+                    <span class="section-title">
+                        <strong>${escapeHtml(title)}</strong>
+                        <span>${escapeHtml(meta)}</span>
+                    </span>
+                    <span class="chevron">⌄</span>
+                </button>
+                <div class="section-body">${open ? body : ''}</div>
+            </section>`;
+        }
+
+        function renderSummaryCards(data) {
+            const stats = getStats(data);
+            const latestLog = stats.logs.length ? new Date(stats.logs[stats.logs.length - 1].timestamp).toLocaleString() : 'No logs yet';
+            document.getElementById('summary-grid').innerHTML = [
+                ['Online now', stats.onlineUsers.length, stats.onlineUsers.length ? stats.onlineUsers.map(u => u.username).slice(0, 3).join(', ') : 'Nobody active'],
+                ['Registered', stats.totalUsers, 'Total accounts'],
+                ['Approved', stats.approvedUsers.length, 'No signup cap'],
+                ['Pending', stats.pendingUsers.length, 'Awaiting admin approval'],
+                ['Annotations', stats.annotations.length, 'Saved annotation files'],
+                ['Access logs', stats.logs.length, latestLog]
+            ].map(([label, value, note]) => `<div class="summary-card">
+                <div class="summary-label">${escapeHtml(label)}</div>
+                <div class="summary-value">${escapeHtml(value)}</div>
+                <div class="summary-note">${escapeHtml(note)}</div>
+            </div>`).join('');
+        }
+
+        function renderBulkToolbar(kind, selectedCount, totalCount, deleteHandlerName) {
+            return `<div class="section-toolbar">
+                <div class="selection-count">${selectedCount} selected · ${totalCount} visible</div>
+                <div class="bulk-actions">
+                    <button class="btn btn-secondary btn-small" onclick='selectAllVisible(${JSON.stringify(kind)})' ${totalCount ? '' : 'disabled'}>Select all visible</button>
+                    <button class="btn btn-secondary btn-small" onclick='clearSelection(${JSON.stringify(kind)})' ${selectedCount ? '' : 'disabled'}>Clear</button>
+                    <button class="btn btn-danger btn-small" onclick='${deleteHandlerName}()' ${selectedCount ? '' : 'disabled'}>Delete selected</button>
+                </div>
+            </div>`;
+        }
+
+        function renderOnlineUsers(data) {
+            const stats = getStats(data);
+            if (!stats.totalUsers) return '<div class="empty-state">No registered users yet.</div>';
+            if (!stats.onlineUsers.length) return '<div class="empty-state">Nobody is currently active.</div>';
+            return `<div class="online-list">${stats.onlineUsers.map(u => `<span class="online-badge"><span class="online-dot"></span>${escapeHtml(u.username)}</span>`).join('')}</div>`;
+        }
+
+        function renderUsers(data) {
+            const users = data.users || [];
+            const stats = getStats(data);
             const approvalCount = document.getElementById('approval-count');
             if (approvalCount) {
-                approvalCount.textContent = `${data.approvedUserCount || 0}/${data.maxApprovedUsers || 19} approved users`;
+                approvalCount.textContent = `${stats.approvedUsers.length} approved users · ${stats.pendingUsers.length} pending approval · no signup cap`;
             }
 
-            if (data.users && data.users.length > 0) {
-                usersList.innerHTML = data.users.map(u => {
-                    const seenText = formatLastSeen(u.lastOnline);
-                    const isBlocked = data.blocked && (data.blocked.includes(u.ip) || data.blocked.includes(u.username));
-                    const isApproved = u.approved !== false;
-                    const devices = Array.isArray(u.devices) ? u.devices : [];
-                    const pendingDevices = Array.isArray(u.pendingDevices) ? u.pendingDevices : [];
-                    const securityEvents = Array.isArray(u.securityEvents) ? u.securityEvents.slice(0, 4) : [];
-                    const btn = isBlocked ?
-                        `<button onclick='unban(${JSON.stringify(u.username)})' style="padding:4px 8px; font-size:0.75rem; background:#6c757d; border-radius:4px;">Unban</button>` :
-                        `<button onclick='banUser(${JSON.stringify(u.username)})' style="padding:4px 8px; font-size:0.75rem; background:#dc3545; border-radius:4px;">Ban IP</button>`;
-                    const approveBtn = isApproved ? '' : `<button onclick='approveUser(${JSON.stringify(u.username)})' style="padding:4px 8px; font-size:0.75rem; background:#198754; border-radius:4px; margin-left:4px;">Approve</button>`;
-                    const resetBtn = `<button onclick='resetDevices(${JSON.stringify(u.username)})' style="padding:4px 8px; font-size:0.75rem; background:#0d6efd; border-radius:4px; margin-left:4px;">Reset Devices</button>`;
-                    const deviceText = `${devices.length}/${data.maxDevicesPerUser || 2} approved · ${pendingDevices.length} pending`;
-                    const latestDevice = devices.slice().sort((a, b) => new Date(b.lastSeenAt || b.firstSeenAt || 0) - new Date(a.lastSeenAt || a.firstSeenAt || 0))[0];
-                    const eventText = securityEvents.map(event => {
-                        const details = formatEventDetails(event);
-                        return `${escapeHtml(event.type)} · ${new Date(event.timestamp).toLocaleString()}${details ? `<br><span style="color:#555;">${details}</span>` : ''}`;
-                    }).join('<br>');
-                    const registrationSummary = u.registrationClientSummary ? formatClientSummary(u.registrationClientSummary) : '';
-                    const approvedDeviceMarkup = devices.map(formatDeviceDetails).join('');
-                    const pendingDeviceMarkup = pendingDevices.map(device => `${formatDeviceDetails(device)}<div style="margin:0.3rem 0 0.6rem 0; display:flex; gap:4px;"><button onclick='approveDevice(${JSON.stringify(u.username)}, ${JSON.stringify(device.id)})' style="padding:4px 8px; font-size:0.75rem; background:#198754; border-radius:4px;">Approve Device</button><button onclick='rejectDevice(${JSON.stringify(u.username)}, ${JSON.stringify(device.id)})' style="padding:4px 8px; font-size:0.75rem; background:#6c757d; border-radius:4px;">Reject</button></div>`).join('');
-                    const activeSession = u.activeSession;
-                    const activeSessionSummary = activeSession ? `${escapeHtml(activeSession.pdfVersion || 'active PDF')} · device ${escapeHtml((activeSession.deviceId || '').slice(-10))} · ${activeSession.lastHeartbeatAt ? new Date(activeSession.lastHeartbeatAt).toLocaleString() : 'no heartbeat'}` : '';
+            if (!users.length) {
+                return '<div class="empty-state">No users found.</div>';
+            }
 
-                    return `<div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:flex-start; gap:8px; background:#fbfbfb; padding:8px; border-radius:6px; border:1px solid #eee;">
-                        <div>
-                            <strong style="color:#222;">${escapeHtml(u.username)}</strong>
-                            <span class="approval-badge ${isApproved ? 'approved' : 'pending'}">${isApproved ? 'APPROVED' : 'PENDING'}</span>
-                            <span style="font-size:0.75rem; color:#888;">(${escapeHtml(u.ip || 'No IP')})</span>
-                            <br><span style="font-size:0.8rem; color:#555;">last seen: ${seenText}</span>
-                            <div class="device-summary">${deviceText}${latestDevice ? ` · latest: ${escapeHtml(latestDevice.label || 'device')}` : ''}</div>
-                            ${registrationSummary ? `<div class="device-summary">registration: ${registrationSummary}</div>` : ''}
-                            ${activeSessionSummary ? `<div class="device-summary" style="color:#0d6efd;">active: ${activeSessionSummary}</div>` : ''}
-                            ${approvedDeviceMarkup ? `<div class="security-events"><strong>Approved devices</strong>${approvedDeviceMarkup}</div>` : ''}
-                            ${pendingDeviceMarkup ? `<div class="security-events"><strong>Pending devices</strong>${pendingDeviceMarkup}</div>` : ''}
-                            ${eventText ? `<div class="security-events"><strong>Recent security</strong><br>${eventText}</div>` : ''}
-                            ${isBlocked ? '<span class="blocked-badge" style="margin-left: 5px;">BANNED</span>' : ''}
-                        </div>
-                        <div style="display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px;">
-                            ${approveBtn}
-                            ${resetBtn}
-                            ${btn}
-                            <button onclick='deleteUser(${JSON.stringify(u.username)})' style="padding:4px 8px; font-size:0.75rem; background:#333; border-radius:4px; margin-left:4px;">Delete User</button>
-                        </div>
-                    </div>`;
+            const toolbar = renderBulkToolbar('users', selectedUsers.size, users.length, 'deleteSelectedUsers');
+            const list = users.map(u => {
+                const seenText = formatLastSeen(u.lastOnline);
+                const isBlocked = data.blocked && (data.blocked.includes(u.ip) || data.blocked.includes(u.username));
+                const isApproved = u.approved !== false;
+                const devices = Array.isArray(u.devices) ? u.devices : [];
+                const pendingDevices = Array.isArray(u.pendingDevices) ? u.pendingDevices : [];
+                const securityEvents = Array.isArray(u.securityEvents) ? u.securityEvents.slice(0, 4) : [];
+                const isOpen = userDetailOpenState.has(u.username);
+                const isSelected = selectedUsers.has(u.username);
+                const latestDevice = devices.slice().sort((a, b) => new Date(b.lastSeenAt || b.firstSeenAt || 0) - new Date(a.lastSeenAt || a.firstSeenAt || 0))[0];
+                const registrationSummary = u.registrationClientSummary ? formatClientSummary(u.registrationClientSummary) : '';
+                const activeSession = u.activeSession;
+                const activeSessionSummary = activeSession ? `${escapeHtml(activeSession.pdfVersion || 'active PDF')} · device ${escapeHtml((activeSession.deviceId || '').slice(-10))} · ${activeSession.lastHeartbeatAt ? new Date(activeSession.lastHeartbeatAt).toLocaleString() : 'no heartbeat'}` : '';
+                const eventText = securityEvents.map(event => {
+                    const details = formatEventDetails(event);
+                    return `<div>${escapeHtml(event.type)} · ${escapeHtml(new Date(event.timestamp).toLocaleString())}${details ? `<br><span>${details}</span>` : ''}</div>`;
                 }).join('');
-            } else {
-                usersList.innerHTML = "No users found.";
-            }
+                const approvedDeviceMarkup = devices.map(formatDeviceDetails).join('') || '<div class="empty-state">No approved devices.</div>';
+                const pendingDeviceMarkup = pendingDevices.map(device => `${formatDeviceDetails(device)}<div class="item-actions" style="margin-top:0.45rem;"><button class="btn btn-success btn-small" onclick='approveDevice(${JSON.stringify(u.username)}, ${JSON.stringify(device.id)})'>Approve device</button><button class="btn btn-secondary btn-small" onclick='rejectDevice(${JSON.stringify(u.username)}, ${JSON.stringify(device.id)})'>Reject</button></div>`).join('') || '<div class="empty-state">No pending devices.</div>';
+                const banButton = isBlocked ?
+                    `<button class="btn btn-secondary btn-small" onclick='unban(${JSON.stringify(u.username)})'>Unban</button>` :
+                    `<button class="btn btn-danger btn-small" onclick='banUser(${JSON.stringify(u.username)})'>Ban</button>`;
+                const approveButton = isApproved ? '' : `<button class="btn btn-success btn-small" onclick='approveUser(${JSON.stringify(u.username)})'>Approve</button>`;
 
-            const onlineList = document.getElementById('online-list');
-            if (data.users && data.users.length > 0) {
-                const now = Date.now();
-                const onlineUsers = data.users.filter(u => (now - u.lastOnline) < 60000);
-                if (onlineUsers.length > 0) {
-                    onlineList.innerHTML = onlineUsers.map(u => `<span class="online-badge"><span class="online-dot"></span>${escapeHtml(u.username)}</span>`).join('');
-                } else {
-                    onlineList.innerHTML = "<span style='color: #888;'>Nobody is currently active.</span>";
-                }
-            } else {
-                onlineList.innerHTML = "<span style='color: #888;'>No registered users yet.</span>";
-            }
+                return `<article class="user-card ${isSelected ? 'selected' : ''}">
+                    <div class="user-main">
+                        <div>
+                            <div class="item-title-row">
+                                <input type="checkbox" ${isSelected ? 'checked' : ''} onclick='toggleSelection(${JSON.stringify('users')}, ${JSON.stringify(u.username)})' aria-label="Select ${escapeHtml(u.username)}">
+                                <span class="item-title">${escapeHtml(u.username)}</span>
+                                <span class="approval-badge ${isApproved ? 'approved' : 'pending'}">${isApproved ? 'APPROVED' : 'PENDING'}</span>
+                                ${isBlocked ? '<span class="blocked-badge">BANNED</span>' : ''}
+                                ${pendingDevices.length ? `<span class="pill">${pendingDevices.length} pending device${pendingDevices.length === 1 ? '' : 's'}</span>` : ''}
+                            </div>
+                            <div class="item-meta">
+                                IP: ${escapeHtml(u.ip || 'No IP')} · last seen: ${escapeHtml(seenText)}<br>
+                                ${devices.length}/${data.maxDevicesPerUser || 2} approved devices${latestDevice ? ` · latest: ${escapeHtml(latestDevice.label || 'device')}` : ''}
+                                ${registrationSummary ? `<br>registration: ${registrationSummary}` : ''}
+                                ${activeSessionSummary ? `<br><span style="color:var(--blue);">active: ${activeSessionSummary}</span>` : ''}
+                            </div>
+                        </div>
+                        <div class="item-actions">
+                            ${approveButton}
+                            <button class="btn btn-blue btn-small" onclick='resetDevices(${JSON.stringify(u.username)})'>Reset devices</button>
+                            ${banButton}
+                            <button class="btn btn-secondary btn-small" onclick='toggleUserDetails(${JSON.stringify(u.username)})'>${isOpen ? 'Hide details' : 'Details'}</button>
+                            <button class="btn btn-danger btn-small" onclick='deleteUser(${JSON.stringify(u.username)})'>Delete</button>
+                        </div>
+                    </div>
+                    <div class="details-panel ${isOpen ? 'open' : ''}">
+                        <div class="detail-grid">
+                            <div class="detail-box"><strong>Approved devices</strong><br>${approvedDeviceMarkup}</div>
+                            <div class="detail-box"><strong>Pending devices</strong><br>${pendingDeviceMarkup}</div>
+                            <div class="detail-box"><strong>Recent security</strong><br>${eventText || '<span class="muted">No recent security events.</span>'}</div>
+                        </div>
+                    </div>
+                </article>`;
+            }).join('');
+
+            return `${toolbar}<div class="user-list">${list}</div>`;
+        }
+
+        function renderUsersAndPresence(data) {
+            const stats = getStats(data);
+            const body = `<div style="margin-bottom:0.85rem;">${renderOnlineUsers(data)}</div>${renderUsers(data)}`;
+            return renderSection('users', 'Users & approvals', `${stats.totalUsers} registered · ${stats.pendingUsers.length} pending · ${stats.onlineUsers.length} online`, body);
         }
 
         function renderAnnotations(data) {
-            const annotationsList = document.getElementById('annotations-list');
             const annotations = data.annotations || [];
 
             if (!annotations.length) {
-                annotationsList.innerHTML = "<span style='color: #888;'>No saved annotations found.</span>";
-                return;
+                return renderSection('annotations', 'Saved annotations', 'No saved annotations', '<div class="empty-state">No saved annotations found.</div>');
             }
 
-            annotationsList.innerHTML = annotations.map(annotation => {
+            const toolbar = renderBulkToolbar('annotations', selectedAnnotations.size, annotations.length, 'deleteSelectedAnnotations');
+            const cards = annotations.map(annotation => {
                 const annotationKey = buildAnnotationKey(annotation.user, annotation.file);
                 const isOpen = annotationOpenState.has(annotationKey);
+                const isSelected = selectedAnnotations.has(annotationKey);
                 const previewState = annotationPreviewCache.get(annotationKey);
                 const lastUpdated = annotation.updatedAt ? new Date(annotation.updatedAt).toLocaleString() : 'Unknown';
                 let previewMarkup = '';
 
                 if (isOpen) {
                     if (previewState?.loading) {
-                        previewMarkup = '<div style="margin-top: 1rem; color: #666;">Loading previews...</div>';
+                        previewMarkup = '<div class="empty-state" style="margin-top:1rem;">Loading previews...</div>';
                     } else if (previewState?.error) {
-                        previewMarkup = `<div style="margin-top: 1rem; color: #d10000;">${escapeHtml(previewState.error)}</div>`;
+                        previewMarkup = `<div class="empty-state" style="margin-top:1rem; color:var(--danger);">${escapeHtml(previewState.error)}</div>`;
                     } else if (previewState?.pages?.length) {
                         previewMarkup = `<div class="annotation-preview-grid">${previewState.pages.map(page => `
                             <div class="annotation-preview-tile">
-                                <div style="font-size: 0.78rem; font-weight: 600; margin-bottom: 0.5rem; color: #555;">Page ${page.page}</div>
+                                <div class="item-meta" style="font-weight:700; margin:0 0 0.5rem;">Page ${escapeHtml(page.page)}</div>
                                 <div class="annotation-preview-surface">
-                                    <img src="${page.dataUrl}" alt="Annotation preview for page ${page.page}">
+                                    <img src="${page.dataUrl}" alt="Annotation preview for page ${escapeHtml(page.page)}">
                                 </div>
                             </div>
                         `).join('')}</div>`;
                     } else {
-                        previewMarkup = '<div style="margin-top: 1rem; color: #888;">No saved preview pages found.</div>';
+                        previewMarkup = '<div class="empty-state" style="margin-top:1rem;">No saved preview pages found.</div>';
                     }
                 }
 
-                return `
-                    <div class="annotation-card">
-                        <div class="annotation-meta">
-                            <div>
-                                <div style="font-weight: 600; color: #222;">${escapeHtml(annotation.user)}</div>
-                                <div style="font-size: 0.9rem; color: #555; margin-top: 0.15rem;">${escapeHtml(annotation.file)}</div>
-                                <div style="font-size: 0.8rem; color: #888; margin-top: 0.35rem;">${annotation.pageCount} annotated page${annotation.pageCount === 1 ? '' : 's'} · Updated ${lastUpdated}</div>
+                return `<article class="annotation-card ${isSelected ? 'selected' : ''}">
+                    <div class="annotation-meta">
+                        <div>
+                            <div class="item-title-row">
+                                <input type="checkbox" ${isSelected ? 'checked' : ''} onclick='toggleSelection(${JSON.stringify('annotations')}, ${JSON.stringify(annotationKey)})' aria-label="Select annotation">
+                                <span class="item-title">${escapeHtml(annotation.user)}</span>
+                                <span class="pill">${annotation.pageCount} page${annotation.pageCount === 1 ? '' : 's'}</span>
                             </div>
-                            <button onclick='toggleAnnotationPreview(${JSON.stringify(annotation.user)}, ${JSON.stringify(annotation.file)})'>${isOpen ? 'Hide previews' : 'View previews'}</button>
+                            <div class="item-meta">${escapeHtml(annotation.file)}<br>Updated ${escapeHtml(lastUpdated)}</div>
                         </div>
-                        ${isOpen ? previewMarkup : ''}
+                        <div class="item-actions">
+                            <button class="btn btn-secondary btn-small" onclick='toggleAnnotationPreview(${JSON.stringify(annotation.user)}, ${JSON.stringify(annotation.file)})'>${isOpen ? 'Hide previews' : 'View previews'}</button>
+                            <button class="btn btn-danger btn-small" onclick='deleteAnnotation(${JSON.stringify(annotation.user)}, ${JSON.stringify(annotation.file)})'>Delete</button>
+                        </div>
                     </div>
-                `;
+                    ${isOpen ? previewMarkup : ''}
+                </article>`;
             }).join('');
+
+            return renderSection('annotations', 'Saved annotations', `${annotations.length} annotation file${annotations.length === 1 ? '' : 's'}`, `${toolbar}<div class="user-list">${cards}</div>`);
         }
 
         function renderLogs(data) {
-            const tbody = document.getElementById('logs-body');
-            tbody.innerHTML = '';
-
-            if (data.database && data.database.length > 0) {
-                const reversedDb = [...data.database].reverse();
-                reversedDb.forEach(log => {
-                    const tr = document.createElement('tr');
-                    const dateObj = new Date(log.timestamp);
-                    const cleanTime = dateObj.toLocaleString();
-
-                    tr.innerHTML = `
-                        <td style="color: #666; font-size: 0.85rem;">${cleanTime}</td>
-                        <td style="font-weight: 600;">${escapeHtml(log.username)}</td>
-                        <td>${escapeHtml(log.pdfVersion || 'N/A')}</td>
-                        <td>${escapeHtml(log.ip || 'N/A')}</td>
-                        <td>${escapeHtml(log.action || 'access')}${log.clientSummary ? `<br><span style="font-size:0.72rem;color:#777;">${formatClientSummary(log.clientSummary)}</span>` : ''}</td>
-                        <td><button onclick='deleteLog(${JSON.stringify(log.timestamp)}, ${JSON.stringify(log.username)})' style="padding: 4px 10px; font-size: 0.75rem; background: #dc3545;">Delete</button></td>
-                    `;
-                    tbody.appendChild(tr);
-                });
-            } else {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #888;">No access logs found yet.</td></tr>';
+            const logs = data.database || [];
+            if (!logs.length) {
+                return renderSection('logs', 'Access history', 'No access logs', '<div class="empty-state">No access logs found yet.</div>');
             }
+
+            const reversedDb = [...logs].reverse();
+            const toolbar = renderBulkToolbar('logs', selectedLogs.size, reversedDb.length, 'deleteSelectedLogs');
+            const rows = reversedDb.map(log => {
+                const logKey = buildLogKey(log);
+                const isSelected = selectedLogs.has(logKey);
+                const dateObj = new Date(log.timestamp);
+                const cleanTime = dateObj.toLocaleString();
+
+                return `<tr class="${isSelected ? 'selected' : ''}">
+                    <td><input type="checkbox" ${isSelected ? 'checked' : ''} onclick='toggleSelection(${JSON.stringify('logs')}, ${JSON.stringify(logKey)})' aria-label="Select log"></td>
+                    <td class="muted">${escapeHtml(cleanTime)}</td>
+                    <td><strong>${escapeHtml(log.username)}</strong></td>
+                    <td>${escapeHtml(log.pdfVersion || 'N/A')}</td>
+                    <td>${escapeHtml(log.ip || 'N/A')}</td>
+                    <td>${escapeHtml(log.action || 'access')}${log.clientSummary ? `<br><span class="muted">${formatClientSummary(log.clientSummary)}</span>` : ''}</td>
+                    <td><button class="btn btn-danger btn-small" onclick='deleteLog(${JSON.stringify(log.timestamp)}, ${JSON.stringify(log.username)}, ${JSON.stringify(log.pdfVersion || null)}, ${JSON.stringify(log.action || 'access')})'>Delete</button></td>
+                </tr>`;
+            }).join('');
+
+            const table = `<div class="table-wrap"><table>
+                <thead>
+                    <tr>
+                        <th></th>
+                        <th>Timestamp</th>
+                        <th>Username</th>
+                        <th>PDF Accessed</th>
+                        <th>IP Address</th>
+                        <th>Action</th>
+                        <th>Controls</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table></div>`;
+
+            return renderSection('logs', 'Access history', `${logs.length} log entr${logs.length === 1 ? 'y' : 'ies'}`, `${toolbar}${table}`);
         }
 
         function renderDashboard() {
             if (!adminData) return;
-            renderUsersAndPresence(adminData);
-            renderAnnotations(adminData);
-            renderLogs(adminData);
+            renderSummaryCards(adminData);
+            document.getElementById('sections-root').innerHTML = [
+                renderUsersAndPresence(adminData),
+                renderAnnotations(adminData),
+                renderLogs(adminData)
+            ].join('');
         }
 
         async function loadAnnotationPreview(user, file) {
@@ -500,9 +1004,7 @@
 
             try {
                 const res = await fetch(`/api/admin/annotations?pwd=${encodeURIComponent(pwd)}&user=${encodeURIComponent(user)}&file=${encodeURIComponent(file)}`);
-                if (!res.ok) {
-                    throw new Error('Failed to load annotation previews');
-                }
+                if (!res.ok) throw new Error('Failed to load annotation previews');
 
                 const data = await res.json();
                 annotationPreviewCache.set(annotationKey, {
@@ -558,82 +1060,230 @@
             });
 
             Array.from(annotationPreviewCache.keys()).forEach(annotationKey => {
-                if (!annotationKeys.has(annotationKey)) {
-                    annotationPreviewCache.delete(annotationKey);
-                }
+                if (!annotationKeys.has(annotationKey)) annotationPreviewCache.delete(annotationKey);
             });
 
             Array.from(annotationOpenState).forEach(annotationKey => {
-                if (!annotationKeys.has(annotationKey)) {
-                    annotationOpenState.delete(annotationKey);
-                }
+                if (!annotationKeys.has(annotationKey)) annotationOpenState.delete(annotationKey);
             });
         }
 
-        async function refreshAdminSnapshot() {
+        function pruneSelectionState(data) {
+            const userKeys = new Set((data.users || []).map(user => user.username));
+            const logKeys = new Set((data.database || []).map(buildLogKey));
+            const annotationKeys = new Set((data.annotations || []).map(annotation => buildAnnotationKey(annotation.user, annotation.file)));
+
+            Array.from(selectedUsers).forEach(key => { if (!userKeys.has(key)) selectedUsers.delete(key); });
+            Array.from(selectedLogs).forEach(key => { if (!logKeys.has(key)) selectedLogs.delete(key); });
+            Array.from(selectedAnnotations).forEach(key => { if (!annotationKeys.has(key)) selectedAnnotations.delete(key); });
+            Array.from(userDetailOpenState).forEach(key => { if (!userKeys.has(key)) userDetailOpenState.delete(key); });
+        }
+
+        async function refreshAdminSnapshot(showNotice = false) {
+            if (destructiveActionInProgress) return;
             const pwd = document.getElementById('pwd').value;
             if (!pwd) return;
 
             const res = await fetch('/api/admin?pwd=' + encodeURIComponent(pwd));
-            if (!res.ok) {
-                throw new Error('Failed to refresh admin data');
-            }
+            if (!res.ok) throw new Error('Failed to refresh admin data');
 
             adminData = await res.json();
             syncAnnotationPreviewCache(adminData);
+            pruneSelectionState(adminData);
             renderDashboard();
+            if (showNotice) setNotice('Dashboard refreshed.', 'success');
         }
 
         async function loadData() {
             const pwd = document.getElementById('pwd').value;
             if (!pwd) return;
 
-            document.getElementById('error-msg').innerText = "Unlocking...";
+            document.getElementById('error-msg').innerText = 'Unlocking...';
 
             try {
                 const res = await fetch('/api/admin?pwd=' + encodeURIComponent(pwd));
                 if (res.status === 401) {
-                    document.getElementById('error-msg').innerText = "Incorrect Password!";
+                    document.getElementById('error-msg').innerText = 'Incorrect Password!';
                     return;
                 }
 
                 adminData = await res.json();
                 syncAnnotationPreviewCache(adminData);
+                pruneSelectionState(adminData);
 
                 document.getElementById('login-section').style.display = 'none';
                 document.getElementById('dashboard').style.display = 'block';
+                document.getElementById('error-msg').innerText = '';
                 renderDashboard();
 
                 if (dashboardRefreshTimer) clearInterval(dashboardRefreshTimer);
                 dashboardRefreshTimer = setInterval(() => {
                     refreshAdminSnapshot().catch(e => console.error('Dashboard refresh failed', e));
                 }, 5000);
-
             } catch(e) {
-                document.getElementById('error-msg').innerText = "Server Error. Are you running the server?";
+                document.getElementById('error-msg').innerText = 'Server Error. Are you running the server?';
                 console.error(e);
             }
         }
 
-        async function deleteLog(timestamp, username) {
-            if (!confirm("Are you sure you want to delete this log?")) return;
-            const pwd = document.getElementById('pwd').value;
+        function toggleSelection(kind, key) {
+            const selection = getSelectionSet(kind);
+            if (selection.has(key)) selection.delete(key);
+            else selection.add(key);
+            renderDashboard();
+        }
+
+        function selectAllVisible(kind) {
+            const selection = getSelectionSet(kind);
+            if (kind === 'users') (adminData.users || []).forEach(user => selection.add(user.username));
+            if (kind === 'logs') (adminData.database || []).forEach(log => selection.add(buildLogKey(log)));
+            if (kind === 'annotations') (adminData.annotations || []).forEach(annotation => selection.add(buildAnnotationKey(annotation.user, annotation.file)));
+            renderDashboard();
+        }
+
+        function clearSelection(kind) {
+            getSelectionSet(kind).clear();
+            renderDashboard();
+        }
+
+        function confirmDelete(kind, labels) {
+            const sample = labels.slice(0, 5).join('\n');
+            const more = labels.length > 5 ? `\n...and ${labels.length - 5} more` : '';
+            const message = `Delete ${labels.length} ${kind}?\n\n${sample}${more}\n\nThis cannot be undone.`;
+            destructiveActionInProgress = true;
             try {
-                const res = await fetch(`/api/admin?pwd=${encodeURIComponent(pwd)}&timestamp=${encodeURIComponent(timestamp)}&username=${encodeURIComponent(username)}`, {
-                    method: 'DELETE'
-                });
-                if (res.ok) {
-                    loadData();
-                } else {
-                    alert("Failed to delete the log.");
+                if (labels.length > 1) {
+                    const typed = prompt(`${message}\n\nType DELETE to confirm.`);
+                    return typed === 'DELETE';
                 }
+                return confirm(message);
+            } finally {
+                destructiveActionInProgress = false;
+            }
+        }
+
+        async function sendAdminDelete(path, payload) {
+            const pwd = document.getElementById('pwd').value;
+            const res = await fetch(`${path}?pwd=${encodeURIComponent(pwd)}`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.success === false) {
+                throw new Error(data.error || 'Delete failed');
+            }
+            return data;
+        }
+
+        function getSelectedUsernames() {
+            return (adminData.users || []).filter(user => selectedUsers.has(user.username)).map(user => user.username);
+        }
+
+        function getSelectedLogEntries() {
+            return (adminData.database || []).filter(log => selectedLogs.has(buildLogKey(log))).map(log => ({
+                timestamp: log.timestamp,
+                username: log.username,
+                pdfVersion: log.pdfVersion || null,
+                action: log.action || 'access'
+            }));
+        }
+
+        function getSelectedAnnotationEntries() {
+            return (adminData.annotations || []).filter(annotation => selectedAnnotations.has(buildAnnotationKey(annotation.user, annotation.file))).map(annotation => ({
+                user: annotation.user,
+                file: annotation.file
+            }));
+        }
+
+        async function deleteSelectedUsers() {
+            const usernames = getSelectedUsernames();
+            if (!usernames.length || !confirmDelete('user account(s)', usernames)) return;
+            try {
+                const data = await sendAdminDelete('/api/admin/users', { usernames });
+                selectedUsers.clear();
+                setNotice(`Deleted ${data.deletedCount || 0} user account(s).`, 'success');
+                await refreshAdminSnapshot();
             } catch(e) {
-                alert("Error deleting log.");
+                setNotice(e.message || 'Failed to delete users.', 'error');
+            }
+        }
+
+        async function deleteSelectedLogs() {
+            const logs = getSelectedLogEntries();
+            const labels = logs.map(log => `${log.username} · ${log.action} · ${log.timestamp}`);
+            if (!logs.length || !confirmDelete('access log(s)', labels)) return;
+            try {
+                const data = await sendAdminDelete('/api/admin/logs', { logs });
+                selectedLogs.clear();
+                setNotice(`Deleted ${data.deletedCount || 0} log entr${data.deletedCount === 1 ? 'y' : 'ies'}.`, 'success');
+                await refreshAdminSnapshot();
+            } catch(e) {
+                setNotice(e.message || 'Failed to delete logs.', 'error');
+            }
+        }
+
+        async function deleteSelectedAnnotations() {
+            const annotations = getSelectedAnnotationEntries();
+            const labels = annotations.map(annotation => `${annotation.user} · ${annotation.file}`);
+            if (!annotations.length || !confirmDelete('annotation file(s)', labels)) return;
+            try {
+                const data = await sendAdminDelete('/api/admin/annotations', { annotations });
+                selectedAnnotations.clear();
+                annotations.forEach(annotation => {
+                    const key = buildAnnotationKey(annotation.user, annotation.file);
+                    annotationOpenState.delete(key);
+                    annotationPreviewCache.delete(key);
+                });
+                setNotice(`Deleted ${data.deletedCount || 0} annotation file(s).`, 'success');
+                await refreshAdminSnapshot();
+            } catch(e) {
+                setNotice(e.message || 'Failed to delete annotations.', 'error');
+            }
+        }
+
+        async function deleteLog(timestamp, username, pdfVersion = null, action = 'access') {
+            const log = { timestamp, username, pdfVersion, action };
+            if (!confirmDelete('access log', [`${username} · ${action} · ${timestamp}`])) return;
+            try {
+                const data = await sendAdminDelete('/api/admin/logs', { logs: [log] });
+                selectedLogs.delete(buildLogKey(log));
+                setNotice(`Deleted ${data.deletedCount || 0} log entr${data.deletedCount === 1 ? 'y' : 'ies'}.`, 'success');
+                await refreshAdminSnapshot();
+            } catch(e) {
+                setNotice(e.message || 'Failed to delete the log.', 'error');
+            }
+        }
+
+        async function deleteUser(username) {
+            if (!confirmDelete('user account', [username])) return;
+            try {
+                const data = await sendAdminDelete('/api/admin/users', { usernames: [username] });
+                selectedUsers.delete(username);
+                setNotice(`Deleted ${data.deletedCount || 0} user account(s).`, 'success');
+                await refreshAdminSnapshot();
+            } catch(e) {
+                setNotice(e.message || 'Failed to delete user.', 'error');
+            }
+        }
+
+        async function deleteAnnotation(user, file) {
+            const key = buildAnnotationKey(user, file);
+            if (!confirmDelete('annotation file', [`${user} · ${file}`])) return;
+            try {
+                const data = await sendAdminDelete('/api/admin/annotations', { annotations: [{ user, file }] });
+                selectedAnnotations.delete(key);
+                annotationOpenState.delete(key);
+                annotationPreviewCache.delete(key);
+                setNotice(`Deleted ${data.deletedCount || 0} annotation file(s).`, 'success');
+                await refreshAdminSnapshot();
+            } catch(e) {
+                setNotice(e.message || 'Failed to delete annotation.', 'error');
             }
         }
 
         async function banUser(username) {
-            if (!confirm(`Are you sure you want to IP ban ${username} forever?`)) return;
+            if (!confirm(`Ban ${username}? This blocks the username and current IP.`)) return;
             const pwd = document.getElementById('pwd').value;
             try {
                 const res = await fetch(`/api/admin/ban?pwd=${encodeURIComponent(pwd)}`, {
@@ -642,17 +1292,18 @@
                     body: JSON.stringify({ username })
                 });
                 if (res.ok) {
-                    loadData();
+                    setNotice(`${username} banned.`, 'success');
+                    await refreshAdminSnapshot();
                 } else {
-                    alert("Failed to ban the user.");
+                    setNotice('Failed to ban the user.', 'error');
                 }
             } catch(e) {
-                alert("Error banning user.");
+                setNotice('Error banning user.', 'error');
             }
         }
 
         async function unban(identifier) {
-            if (!confirm(`Are you sure you want to unban ${identifier}?`)) return;
+            if (!confirm(`Unban ${identifier}?`)) return;
             const pwd = document.getElementById('pwd').value;
             try {
                 const res = await fetch(`/api/admin/ban?pwd=${encodeURIComponent(pwd)}`, {
@@ -661,12 +1312,13 @@
                     body: JSON.stringify({ identifier })
                 });
                 if (res.ok) {
-                    loadData();
+                    setNotice(`${identifier} unbanned.`, 'success');
+                    await refreshAdminSnapshot();
                 } else {
-                    alert("Failed to unban.");
+                    setNotice('Failed to unban.', 'error');
                 }
             } catch(e) {
-                alert("Error unbanning.");
+                setNotice('Error unbanning.', 'error');
             }
         }
 
@@ -680,12 +1332,13 @@
                 });
                 const data = await res.json();
                 if (res.ok && data.success) {
-                    loadData();
+                    setNotice(`${username} approved.`, 'success');
+                    await refreshAdminSnapshot();
                 } else {
-                    alert(data.error || 'Failed to approve user.');
+                    setNotice(data.error || 'Failed to approve user.', 'error');
                 }
             } catch(e) {
-                alert('Error approving user.');
+                setNotice('Error approving user.', 'error');
             }
         }
 
@@ -699,12 +1352,13 @@
                 });
                 const data = await res.json();
                 if (res.ok && data.success) {
-                    loadData();
+                    setNotice('Device approved.', 'success');
+                    await refreshAdminSnapshot();
                 } else {
-                    alert(data.error || 'Failed to approve device.');
+                    setNotice(data.error || 'Failed to approve device.', 'error');
                 }
             } catch(e) {
-                alert('Error approving device.');
+                setNotice('Error approving device.', 'error');
             }
         }
 
@@ -719,12 +1373,13 @@
                 });
                 const data = await res.json();
                 if (res.ok && data.success) {
-                    loadData();
+                    setNotice('Device rejected.', 'success');
+                    await refreshAdminSnapshot();
                 } else {
-                    alert(data.error || 'Failed to reject device.');
+                    setNotice(data.error || 'Failed to reject device.', 'error');
                 }
             } catch(e) {
-                alert('Error rejecting device.');
+                setNotice('Error rejecting device.', 'error');
             }
         }
 
@@ -739,31 +1394,13 @@
                 });
                 const data = await res.json();
                 if (res.ok && data.success) {
-                    loadData();
+                    setNotice('Trusted devices reset.', 'success');
+                    await refreshAdminSnapshot();
                 } else {
-                    alert(data.error || 'Failed to reset devices.');
+                    setNotice(data.error || 'Failed to reset devices.', 'error');
                 }
             } catch(e) {
-                alert('Error resetting devices.');
-            }
-        }
-
-        async function deleteUser(username) {
-            if (!confirm(`Are you sure you want to PERMANENTLY delete user "${username}"?\n\nThey will be removed from the system completely.`)) return;
-            const pwd = document.getElementById('pwd').value;
-            try {
-                const res = await fetch(`/api/admin/user?pwd=${encodeURIComponent(pwd)}`, {
-                    method: 'DELETE',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username })
-                });
-                if (res.ok) {
-                    loadData();
-                } else {
-                    alert("Failed to delete user.");
-                }
-            } catch(e) {
-                alert("Error deleting user.");
+                setNotice('Error resetting devices.', 'error');
             }
         }
     </script>

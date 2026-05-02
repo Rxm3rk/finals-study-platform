@@ -47,7 +47,6 @@ const ACTIVE_ANNOUNCEMENT = {
     message: 'New contents have been added to the question bank, check it out!',
     durationMs: 15000
 };
-const MAX_APPROVED_USERS = 19;
 const MAX_DEVICES_PER_USER = 2;
 const ACTIVE_SESSION_HEARTBEAT_MS = 8000;
 const ACTIVE_SESSION_REPLACED_ERROR = 'SESSION_REPLACED';
@@ -835,7 +834,6 @@ const server = http.createServer((req, res) => {
                 blocked: JSON.parse(blockedData),
                 users,
                 approvedUserCount: countApprovedUsers(users),
-                maxApprovedUsers: MAX_APPROVED_USERS,
                 maxDevicesPerUser: MAX_DEVICES_PER_USER,
                 annotations: listAnnotationSummaries(users)
             }));
@@ -868,10 +866,6 @@ const server = http.createServer((req, res) => {
                     return res.end(JSON.stringify({ success: false, error: 'User not found' }));
                 }
 
-                if (!user.approved && countApprovedUsers(users) >= MAX_APPROVED_USERS) {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ success: false, error: 'Approved user limit reached' }));
-                }
 
                 user.approved = true;
                 user.approvedAt = new Date().toISOString();
@@ -1066,11 +1060,148 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    if (req.method === 'DELETE' && pathname === '/api/admin/logs') {
+        const pwd = parsedUrl.searchParams.get('pwd');
+        const adminPassword = getAdminPassword();
+
+        if (pwd !== adminPassword) {
+            res.writeHead(401);
+            return res.end('Unauthorized');
+        }
+
+        let body = '';
+        req.on('data', chunk => body += chunk.toString());
+        req.on('end', () => {
+            try {
+                const data = JSON.parse(body || '{}');
+                const logsToDelete = Array.isArray(data.logs) ? data.logs : [];
+                if (!logsToDelete.length || logsToDelete.length > 1000) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'Invalid logs payload' }));
+                }
+
+                const targets = logsToDelete
+                    .filter(log => log && typeof log.timestamp === 'string' && typeof log.username === 'string')
+                    .map(log => ({
+                        timestamp: log.timestamp,
+                        username: log.username,
+                        pdfVersion: Object.prototype.hasOwnProperty.call(log, 'pdfVersion') ? log.pdfVersion : undefined,
+                        action: Object.prototype.hasOwnProperty.call(log, 'action') ? log.action : undefined
+                    }));
+
+                if (!targets.length) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'No valid logs selected' }));
+                }
+
+                const dbData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+                let deletedCount = 0;
+                const remainingLogs = dbData.filter(log => {
+                    const targetIndex = targets.findIndex(target =>
+                        log.timestamp === target.timestamp &&
+                        log.username === target.username &&
+                        (target.pdfVersion === undefined || (log.pdfVersion || null) === target.pdfVersion) &&
+                        (target.action === undefined || (log.action || 'access') === target.action)
+                    );
+
+                    if (targetIndex === -1) return true;
+                    targets.splice(targetIndex, 1);
+                    deletedCount += 1;
+                    return false;
+                });
+
+                fs.writeFileSync(DB_FILE, JSON.stringify(remainingLogs, null, 2));
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, deletedCount }));
+            } catch(e) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, error: 'Database write error' }));
+            }
+        });
+        return;
+    }
+
+    if (req.method === 'DELETE' && pathname === '/api/admin/users') {
+        const pwd = parsedUrl.searchParams.get('pwd');
+        const adminPassword = getAdminPassword();
+
+        if (pwd !== adminPassword) {
+            res.writeHead(401);
+            return res.end('Unauthorized');
+        }
+
+        let body = '';
+        req.on('data', chunk => body += chunk.toString());
+        req.on('end', () => {
+            try {
+                const data = JSON.parse(body || '{}');
+                const usernames = Array.isArray(data.usernames) ? data.usernames.filter(username => typeof username === 'string' && username.trim()) : [];
+                if (!usernames.length || usernames.length > 500) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'Invalid users payload' }));
+                }
+
+                const selected = new Set(usernames);
+                const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+                const remainingUsers = users.filter(user => !selected.has(user.username));
+                const deletedCount = users.length - remainingUsers.length;
+
+                fs.writeFileSync(USERS_FILE, JSON.stringify(remainingUsers, null, 2));
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, deletedCount }));
+            } catch(e) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, error: 'Users write error' }));
+            }
+        });
+        return;
+    }
+
+    if (req.method === 'DELETE' && pathname === '/api/admin/annotations') {
+        const pwd = parsedUrl.searchParams.get('pwd');
+        const adminPassword = getAdminPassword();
+
+        if (pwd !== adminPassword) {
+            res.writeHead(401);
+            return res.end('Unauthorized');
+        }
+
+        let body = '';
+        req.on('data', chunk => body += chunk.toString());
+        req.on('end', () => {
+            try {
+                const data = JSON.parse(body || '{}');
+                const annotations = Array.isArray(data.annotations) ? data.annotations : [];
+                if (!annotations.length || annotations.length > 500) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'Invalid annotations payload' }));
+                }
+
+                let deletedCount = 0;
+                annotations.forEach(annotation => {
+                    if (!annotation || typeof annotation.user !== 'string' || typeof annotation.file !== 'string') return;
+                    const annotationPath = getAnnotationPath(annotation.user, annotation.file);
+                    if (fs.existsSync(annotationPath)) {
+                        fs.unlinkSync(annotationPath);
+                        deletedCount += 1;
+                    }
+                });
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, deletedCount }));
+            } catch(e) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, error: 'Annotation delete error' }));
+            }
+        });
+        return;
+    }
+
     if (req.method === 'DELETE' && pathname === '/api/admin') {
         const pwd = parsedUrl.searchParams.get('pwd');
         const timestamp = parsedUrl.searchParams.get('timestamp');
         const username = parsedUrl.searchParams.get('username');
-        const adminPassword = process.env.ADMIN_PASSWORD || 'rxm3rk_admin';
+        const adminPassword = getAdminPassword();
         
         if (pwd !== adminPassword) {
             res.writeHead(401);
@@ -1099,7 +1230,7 @@ const server = http.createServer((req, res) => {
 
     if (req.method === 'POST' && pathname === '/api/admin/ban') {
         const pwd = parsedUrl.searchParams.get('pwd');
-        const adminPassword = process.env.ADMIN_PASSWORD || 'rxm3rk_admin';
+        const adminPassword = getAdminPassword();
         if (pwd !== adminPassword) {
             res.writeHead(401);
             return res.end('Unauthorized');
@@ -1139,7 +1270,7 @@ const server = http.createServer((req, res) => {
 
     if (req.method === 'DELETE' && pathname === '/api/admin/ban') {
         const pwd = parsedUrl.searchParams.get('pwd');
-        const adminPassword = process.env.ADMIN_PASSWORD || 'rxm3rk_admin';
+        const adminPassword = getAdminPassword();
         if (pwd !== adminPassword) {
             res.writeHead(401);
             return res.end('Unauthorized');
@@ -1171,7 +1302,7 @@ const server = http.createServer((req, res) => {
 
     if (req.method === 'DELETE' && pathname === '/api/admin/user') {
         const pwd = parsedUrl.searchParams.get('pwd');
-        const adminPassword = process.env.ADMIN_PASSWORD || 'rxm3rk_admin';
+        const adminPassword = getAdminPassword();
         if (pwd !== adminPassword) {
             res.writeHead(401);
             return res.end('Unauthorized');

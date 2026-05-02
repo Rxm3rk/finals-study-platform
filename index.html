@@ -166,6 +166,22 @@
             line-height: 1.55;
         }
 
+        .resource-note {
+            margin: -0.45rem 0 1.35rem;
+            padding: 0.95rem 1rem;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            border-radius: 16px;
+            background: rgba(248, 250, 252, 0.78);
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            line-height: 1.55;
+        }
+
+        .resource-note strong {
+            color: var(--text-main);
+            font-weight: 700;
+        }
+
         /* Bottom CTA */
         .bottom-cta {
             text-align: center;
@@ -617,6 +633,10 @@
                 <div class="access-note-badge">Now public</div>
                 <div class="access-note-title">Open for Stage 5 HMU students</div>
                 <div class="access-note-text">Create an account, then sign in from your trusted device to open the question bank and study resources.</div>
+            </div>
+
+            <div class="resource-note">
+                All PDF options contain the same core question bank, just organized in different ways. <strong>Theory Finals</strong> is the most compact choice for finals because everything is kept together in one file. <strong>Block Questions</strong> is better for end-block exams because the same material is arranged by block. <strong>Finals Only</strong> is for focused revision on the last two years of finals questions.
             </div>
 
             <form id="accessForm" onsubmit="handleFormSubmit(event)">

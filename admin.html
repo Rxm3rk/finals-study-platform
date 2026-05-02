@@ -290,6 +290,43 @@
             return `${user}::${file}`;
         }
 
+        function formatClientSummary(summary) {
+            if (!summary) return '';
+            const parts = [
+                summary.deviceLabel,
+                summary.platform,
+                summary.timezone,
+                summary.screen ? `screen ${summary.screen}` : '',
+                summary.viewport ? `view ${summary.viewport}` : '',
+                Number.isFinite(Number(summary.maxTouchPoints)) ? `${summary.maxTouchPoints} touch` : '',
+                summary.standalone ? 'standalone' : ''
+            ].filter(Boolean);
+            return parts.map(escapeHtml).join(' · ');
+        }
+
+        function formatDeviceDetails(device) {
+            const summary = formatClientSummary(device.clientSummary);
+            const seen = device.lastSeenAt ? new Date(device.lastSeenAt).toLocaleString() : 'Unknown';
+            const first = device.firstSeenAt ? new Date(device.firstSeenAt).toLocaleString() : 'Unknown';
+            return `<div class="device-summary" style="margin-top:0.35rem; padding:0.4rem; background:#fff; border:1px solid #eee; border-radius:6px;">
+                <strong>${escapeHtml(device.label || 'Device')}</strong> · ${escapeHtml((device.id || '').slice(-10))}<br>
+                IP: ${escapeHtml(device.lastIp || 'N/A')} · first: ${first} · last: ${seen}
+                ${summary ? `<br>${summary}` : ''}
+                ${device.userAgent ? `<br><span style="word-break:break-word;">UA: ${escapeHtml(device.userAgent)}</span>` : ''}
+            </div>`;
+        }
+
+        function formatEventDetails(event) {
+            const details = [];
+            if (event.ip) details.push(`IP ${event.ip}`);
+            if (event.deviceId) details.push(`device ${String(event.deviceId).slice(-10)}`);
+            if (event.attemptedDeviceId) details.push(`attempt ${String(event.attemptedDeviceId).slice(-10)}`);
+            if (event.activeDeviceId) details.push(`active ${String(event.activeDeviceId).slice(-10)}`);
+            if (event.pdfVersion) details.push(event.pdfVersion);
+            if (event.clientSummary) details.push(formatClientSummary(event.clientSummary));
+            return details.filter(Boolean).join(' · ');
+        }
+
         function buildAnnotationVersion(annotation) {
             return annotation ? `${annotation.updatedAt || ''}|${annotation.pageCount || 0}` : '';
         }
@@ -311,15 +348,24 @@
                     const isBlocked = data.blocked && (data.blocked.includes(u.ip) || data.blocked.includes(u.username));
                     const isApproved = u.approved !== false;
                     const devices = Array.isArray(u.devices) ? u.devices : [];
-                    const securityEvents = Array.isArray(u.securityEvents) ? u.securityEvents.slice(0, 2) : [];
+                    const pendingDevices = Array.isArray(u.pendingDevices) ? u.pendingDevices : [];
+                    const securityEvents = Array.isArray(u.securityEvents) ? u.securityEvents.slice(0, 4) : [];
                     const btn = isBlocked ?
                         `<button onclick='unban(${JSON.stringify(u.username)})' style="padding:4px 8px; font-size:0.75rem; background:#6c757d; border-radius:4px;">Unban</button>` :
                         `<button onclick='banUser(${JSON.stringify(u.username)})' style="padding:4px 8px; font-size:0.75rem; background:#dc3545; border-radius:4px;">Ban IP</button>`;
                     const approveBtn = isApproved ? '' : `<button onclick='approveUser(${JSON.stringify(u.username)})' style="padding:4px 8px; font-size:0.75rem; background:#198754; border-radius:4px; margin-left:4px;">Approve</button>`;
                     const resetBtn = `<button onclick='resetDevices(${JSON.stringify(u.username)})' style="padding:4px 8px; font-size:0.75rem; background:#0d6efd; border-radius:4px; margin-left:4px;">Reset Devices</button>`;
-                    const deviceText = `${devices.length}/${data.maxDevicesPerUser || 2} devices`;
+                    const deviceText = `${devices.length}/${data.maxDevicesPerUser || 2} approved · ${pendingDevices.length} pending`;
                     const latestDevice = devices.slice().sort((a, b) => new Date(b.lastSeenAt || b.firstSeenAt || 0) - new Date(a.lastSeenAt || a.firstSeenAt || 0))[0];
-                    const eventText = securityEvents.map(event => `${escapeHtml(event.type)} · ${new Date(event.timestamp).toLocaleString()}`).join('<br>');
+                    const eventText = securityEvents.map(event => {
+                        const details = formatEventDetails(event);
+                        return `${escapeHtml(event.type)} · ${new Date(event.timestamp).toLocaleString()}${details ? `<br><span style="color:#555;">${details}</span>` : ''}`;
+                    }).join('<br>');
+                    const registrationSummary = u.registrationClientSummary ? formatClientSummary(u.registrationClientSummary) : '';
+                    const approvedDeviceMarkup = devices.map(formatDeviceDetails).join('');
+                    const pendingDeviceMarkup = pendingDevices.map(device => `${formatDeviceDetails(device)}<div style="margin:0.3rem 0 0.6rem 0; display:flex; gap:4px;"><button onclick='approveDevice(${JSON.stringify(u.username)}, ${JSON.stringify(device.id)})' style="padding:4px 8px; font-size:0.75rem; background:#198754; border-radius:4px;">Approve Device</button><button onclick='rejectDevice(${JSON.stringify(u.username)}, ${JSON.stringify(device.id)})' style="padding:4px 8px; font-size:0.75rem; background:#6c757d; border-radius:4px;">Reject</button></div>`).join('');
+                    const activeSession = u.activeSession;
+                    const activeSessionSummary = activeSession ? `${escapeHtml(activeSession.pdfVersion || 'active PDF')} · device ${escapeHtml((activeSession.deviceId || '').slice(-10))} · ${activeSession.lastHeartbeatAt ? new Date(activeSession.lastHeartbeatAt).toLocaleString() : 'no heartbeat'}` : '';
 
                     return `<div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:flex-start; gap:8px; background:#fbfbfb; padding:8px; border-radius:6px; border:1px solid #eee;">
                         <div>
@@ -328,7 +374,11 @@
                             <span style="font-size:0.75rem; color:#888;">(${escapeHtml(u.ip || 'No IP')})</span>
                             <br><span style="font-size:0.8rem; color:#555;">last seen: ${seenText}</span>
                             <div class="device-summary">${deviceText}${latestDevice ? ` · latest: ${escapeHtml(latestDevice.label || 'device')}` : ''}</div>
-                            ${eventText ? `<div class="security-events">${eventText}</div>` : ''}
+                            ${registrationSummary ? `<div class="device-summary">registration: ${registrationSummary}</div>` : ''}
+                            ${activeSessionSummary ? `<div class="device-summary" style="color:#0d6efd;">active: ${activeSessionSummary}</div>` : ''}
+                            ${approvedDeviceMarkup ? `<div class="security-events"><strong>Approved devices</strong>${approvedDeviceMarkup}</div>` : ''}
+                            ${pendingDeviceMarkup ? `<div class="security-events"><strong>Pending devices</strong>${pendingDeviceMarkup}</div>` : ''}
+                            ${eventText ? `<div class="security-events"><strong>Recent security</strong><br>${eventText}</div>` : ''}
                             ${isBlocked ? '<span class="blocked-badge" style="margin-left: 5px;">BANNED</span>' : ''}
                         </div>
                         <div style="display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px;">
@@ -424,7 +474,7 @@
                         <td style="font-weight: 600;">${escapeHtml(log.username)}</td>
                         <td>${escapeHtml(log.pdfVersion || 'N/A')}</td>
                         <td>${escapeHtml(log.ip || 'N/A')}</td>
-                        <td>${escapeHtml(log.action || 'access')}</td>
+                        <td>${escapeHtml(log.action || 'access')}${log.clientSummary ? `<br><span style="font-size:0.72rem;color:#777;">${formatClientSummary(log.clientSummary)}</span>` : ''}</td>
                         <td><button onclick='deleteLog(${JSON.stringify(log.timestamp)}, ${JSON.stringify(log.username)})' style="padding: 4px 10px; font-size: 0.75rem; background: #dc3545;">Delete</button></td>
                     `;
                     tbody.appendChild(tr);
@@ -636,6 +686,45 @@
                 }
             } catch(e) {
                 alert('Error approving user.');
+            }
+        }
+
+        async function approveDevice(username, deviceId) {
+            const pwd = document.getElementById('pwd').value;
+            try {
+                const res = await fetch(`/api/admin/user/device/approve?pwd=${encodeURIComponent(pwd)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, deviceId })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    loadData();
+                } else {
+                    alert(data.error || 'Failed to approve device.');
+                }
+            } catch(e) {
+                alert('Error approving device.');
+            }
+        }
+
+        async function rejectDevice(username, deviceId) {
+            if (!confirm(`Reject pending device for ${username}?`)) return;
+            const pwd = document.getElementById('pwd').value;
+            try {
+                const res = await fetch(`/api/admin/user/device/reject?pwd=${encodeURIComponent(pwd)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, deviceId })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    loadData();
+                } else {
+                    alert(data.error || 'Failed to reject device.');
+                }
+            } catch(e) {
+                alert('Error rejecting device.');
             }
         }
 

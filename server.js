@@ -128,6 +128,83 @@ function isUserApproved(user) {
     return user.approved !== false;
 }
 
+function limitString(value, maxLength = 160) {
+    if (typeof value !== 'string') return '';
+    return value.slice(0, maxLength);
+}
+
+function sanitizeClientDetails(details) {
+    if (!details || typeof details !== 'object') return null;
+
+    const sanitized = {
+        deviceLabel: limitString(details.deviceLabel, 40),
+        userAgent: limitString(details.userAgent, 260),
+        platform: limitString(details.platform, 80),
+        vendor: limitString(details.vendor, 80),
+        language: limitString(details.language, 40),
+        timezone: limitString(details.timezone, 80),
+        cookieEnabled: Boolean(details.cookieEnabled),
+        standalone: Boolean(details.standalone),
+        maxTouchPoints: Number.isFinite(Number(details.maxTouchPoints)) ? Number(details.maxTouchPoints) : 0,
+        screen: details.screen && typeof details.screen === 'object' ? {
+            width: Number(details.screen.width) || 0,
+            height: Number(details.screen.height) || 0,
+            availWidth: Number(details.screen.availWidth) || 0,
+            availHeight: Number(details.screen.availHeight) || 0,
+            colorDepth: Number(details.screen.colorDepth) || 0
+        } : null,
+        viewport: details.viewport && typeof details.viewport === 'object' ? {
+            width: Number(details.viewport.width) || 0,
+            height: Number(details.viewport.height) || 0,
+            devicePixelRatio: Number(details.viewport.devicePixelRatio) || 0,
+            orientation: limitString(details.viewport.orientation, 40)
+        } : null
+    };
+
+    if (Array.isArray(details.languages)) {
+        sanitized.languages = details.languages.slice(0, 6).map(language => limitString(language, 40)).filter(Boolean);
+    } else {
+        sanitized.languages = [];
+    }
+
+    return sanitized;
+}
+
+function summarizeClientDetails(details) {
+    const sanitized = sanitizeClientDetails(details);
+    if (!sanitized) return null;
+
+    return {
+        deviceLabel: sanitized.deviceLabel,
+        platform: sanitized.platform,
+        timezone: sanitized.timezone,
+        language: sanitized.language,
+        maxTouchPoints: sanitized.maxTouchPoints,
+        screen: sanitized.screen ? `${sanitized.screen.width}x${sanitized.screen.height}` : '',
+        viewport: sanitized.viewport ? `${sanitized.viewport.width}x${sanitized.viewport.height}@${sanitized.viewport.devicePixelRatio}` : '',
+        orientation: sanitized.viewport ? sanitized.viewport.orientation : '',
+        standalone: sanitized.standalone
+    };
+}
+
+function buildDeviceRecord(deviceId, clientIp, req, data, existingDevice) {
+    const clientDetails = sanitizeClientDetails(data.clientDetails);
+    const clientSummary = summarizeClientDetails(data.clientDetails);
+    const now = new Date().toISOString();
+
+    return {
+        ...(existingDevice || {}),
+        id: deviceId,
+        label: limitString(data.deviceLabel, 40) || (clientSummary && clientSummary.deviceLabel) || getDeviceLabel(req.headers['user-agent'] || ''),
+        firstSeenAt: existingDevice?.firstSeenAt || now,
+        lastSeenAt: now,
+        lastIp: clientIp,
+        userAgent: req.headers['user-agent'] || '',
+        clientDetails,
+        clientSummary
+    };
+}
+
 function ensureSecurityFields(user, defaultApproved = true) {
     if (typeof user.approved !== 'boolean') {
         user.approved = defaultApproved;
@@ -146,6 +223,12 @@ function ensureSecurityFields(user, defaultApproved = true) {
     }
     if (!Object.prototype.hasOwnProperty.call(user, 'activeSession')) {
         user.activeSession = null;
+    }
+    if (!Array.isArray(user.pendingDevices)) {
+        user.pendingDevices = [];
+    }
+    if (!Object.prototype.hasOwnProperty.call(user, 'registrationClientDetails')) {
+        user.registrationClientDetails = null;
     }
     return user;
 }
@@ -177,25 +260,29 @@ function normalizeDeviceId(deviceId) {
     return deviceId.trim().slice(0, 80);
 }
 
-function verifyUserAccess(user, clientIp, req, deviceId) {
+function verifyUserAccess(user, clientIp, req, deviceId, data = {}) {
     ensureSecurityFields(user);
 
     if (!isUserApproved(user)) {
-        recordSecurityEvent(user, 'blocked_unapproved_access', { ip: clientIp });
+        recordSecurityEvent(user, 'blocked_unapproved_access', {
+            ip: clientIp,
+            clientSummary: summarizeClientDetails(data.clientDetails)
+        });
         return { ok: false, status: 403, error: 'Account pending admin approval.' };
     }
 
     const normalizedDeviceId = normalizeDeviceId(deviceId);
     if (!normalizedDeviceId) {
-        recordSecurityEvent(user, 'blocked_missing_device', { ip: clientIp });
+        recordSecurityEvent(user, 'blocked_missing_device', {
+            ip: clientIp,
+            clientSummary: summarizeClientDetails(data.clientDetails)
+        });
         return { ok: false, status: 403, error: 'Device verification failed. Please try again.' };
     }
 
     const existingDevice = user.devices.find(device => device.id === normalizedDeviceId);
     if (existingDevice) {
-        existingDevice.lastSeenAt = new Date().toISOString();
-        existingDevice.lastIp = clientIp;
-        existingDevice.userAgent = req.headers['user-agent'] || '';
+        Object.assign(existingDevice, buildDeviceRecord(normalizedDeviceId, clientIp, req, data, existingDevice));
         return { ok: true };
     }
 
@@ -203,26 +290,32 @@ function verifyUserAccess(user, clientIp, req, deviceId) {
         recordSecurityEvent(user, 'blocked_device_limit', {
             ip: clientIp,
             attemptedDeviceId: normalizedDeviceId,
-            userAgent: req.headers['user-agent'] || ''
+            userAgent: req.headers['user-agent'] || '',
+            clientSummary: summarizeClientDetails(data.clientDetails)
         });
         return { ok: false, status: 403, error: 'Device limit reached. Contact admin.' };
     }
 
-    user.devices.push({
-        id: normalizedDeviceId,
-        label: getDeviceLabel(req.headers['user-agent'] || ''),
-        firstSeenAt: new Date().toISOString(),
-        lastSeenAt: new Date().toISOString(),
-        lastIp: clientIp,
-        userAgent: req.headers['user-agent'] || ''
-    });
+    const pendingDevice = user.pendingDevices.find(device => device.id === normalizedDeviceId);
+    const pendingRecord = buildDeviceRecord(normalizedDeviceId, clientIp, req, data, pendingDevice);
+    pendingRecord.requestedPdfVersion = data.pdfVersion || pendingRecord.requestedPdfVersion || null;
+    pendingRecord.status = 'pending';
 
-    recordSecurityEvent(user, 'device_registered', {
+    if (pendingDevice) {
+        Object.assign(pendingDevice, pendingRecord);
+    } else {
+        user.pendingDevices.unshift(pendingRecord);
+        user.pendingDevices = user.pendingDevices.slice(0, 10);
+    }
+
+    recordSecurityEvent(user, pendingDevice ? 'pending_device_retried' : 'pending_device_requested', {
         ip: clientIp,
-        deviceId: normalizedDeviceId
+        deviceId: normalizedDeviceId,
+        pdfVersion: data.pdfVersion || null,
+        clientSummary: pendingRecord.clientSummary
     });
 
-    return { ok: true };
+    return { ok: false, status: 403, error: 'Device pending admin approval.' };
 }
 
 function findAuthorizedUserBySession(users, username, token) {
@@ -264,7 +357,9 @@ function createActiveSession(user, data, clientIp, req) {
         startedAt: new Date().toISOString(),
         lastHeartbeatAt: new Date().toISOString(),
         ip: clientIp,
-        userAgent: req.headers['user-agent'] || ''
+        userAgent: req.headers['user-agent'] || '',
+        clientDetails: sanitizeClientDetails(data.clientDetails),
+        clientSummary: summarizeClientDetails(data.clientDetails)
     };
 
     return user.activeSession;
@@ -355,7 +450,7 @@ function verifyProtectedSession(users, username, token, deviceId, clientIp, req)
     existingDevice.lastIp = clientIp;
     existingDevice.userAgent = req.headers['user-agent'] || '';
 
-    return { ok: true, user };
+    return { ok: true, user, device: existingDevice };
 }
 
 function parseStoredAnnotationName(storageFile, users) {
@@ -448,6 +543,8 @@ const server = http.createServer((req, res) => {
                     res.writeHead(400, { 'Content-Type': 'application/json' });
                     return res.end(JSON.stringify({ success: false, error: 'Username already exists' }));
                 }
+                const registrationClientDetails = sanitizeClientDetails(data.clientDetails);
+                const registrationClientSummary = summarizeClientDetails(data.clientDetails);
                 const newUser = {
                     username: data.username,
                     password: data.password,
@@ -458,8 +555,16 @@ const server = http.createServer((req, res) => {
                     approvedAt: null,
                     approvedBy: null,
                     devices: [],
+                    pendingDevices: [],
+                    registrationClientDetails,
+                    registrationClientSummary,
                     securityEvents: []
                 };
+                recordSecurityEvent(newUser, 'registration_submitted', {
+                    ip: clientIp,
+                    deviceId: normalizeDeviceId(data.deviceId),
+                    clientSummary: registrationClientSummary
+                });
                 updateUserActivity(newUser, clientIp);
                 users.push(newUser);
                 fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
@@ -493,6 +598,13 @@ const server = http.createServer((req, res) => {
                         return res.end(JSON.stringify({ success: false, error: sessionCheck.error }));
                     }
 
+                    if (sessionCheck.device) {
+                        Object.assign(sessionCheck.device, buildDeviceRecord(data.deviceId, clientIp, req, data, sessionCheck.device));
+                    }
+                    if (sessionCheck.user.activeSession) {
+                        sessionCheck.user.activeSession.clientDetails = sanitizeClientDetails(data.clientDetails);
+                        sessionCheck.user.activeSession.clientSummary = summarizeClientDetails(data.clientDetails);
+                    }
                     updateUserActivity(sessionCheck.user, clientIp);
                     fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
                     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -506,7 +618,7 @@ const server = http.createServer((req, res) => {
                     return res.end(JSON.stringify({ success: false, error: 'Invalid credentials or expired session' }));
                 }
 
-                const accessCheck = verifyUserAccess(user, clientIp, req, data.deviceId);
+                const accessCheck = verifyUserAccess(user, clientIp, req, data.deviceId, data);
                 if (!accessCheck.ok) {
                     fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
                     res.writeHead(accessCheck.status, { 'Content-Type': 'application/json' });
@@ -541,7 +653,9 @@ const server = http.createServer((req, res) => {
                         username: data.username,
                         pdfVersion: data.pdfVersion,
                         ip: clientIp,
-                        action: 'login'
+                        action: 'login',
+                        deviceId: normalizeDeviceId(data.deviceId),
+                        clientSummary: summarizeClientDetails(data.clientDetails)
                     });
                 }
                 fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
@@ -775,6 +889,109 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    if (req.method === 'POST' && pathname === '/api/admin/user/device/approve') {
+        const pwd = parsedUrl.searchParams.get('pwd');
+        const adminPassword = getAdminPassword();
+        if (pwd !== adminPassword) {
+            res.writeHead(401);
+            return res.end('Unauthorized');
+        }
+
+        let body = '';
+        req.on('data', chunk => body += chunk.toString());
+        req.on('end', () => {
+            try {
+                const data = JSON.parse(body);
+                const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+                users.forEach(user => ensureSecurityFields(user));
+                const user = users.find(u => u.username === data.username);
+
+                if (!user) {
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'User not found' }));
+                }
+
+                const deviceId = normalizeDeviceId(data.deviceId);
+                const pendingIndex = user.pendingDevices.findIndex(device => device.id === deviceId);
+                if (pendingIndex === -1) {
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'Pending device not found' }));
+                }
+
+                if (user.devices.length >= MAX_DEVICES_PER_USER) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'Device limit reached' }));
+                }
+
+                const [pendingDevice] = user.pendingDevices.splice(pendingIndex, 1);
+                pendingDevice.approvedAt = new Date().toISOString();
+                pendingDevice.approvedBy = 'admin';
+                delete pendingDevice.status;
+                user.devices.push(pendingDevice);
+                recordSecurityEvent(user, 'admin_approved_device', {
+                    ip: clientIp,
+                    deviceId,
+                    clientSummary: pendingDevice.clientSummary || null
+                });
+
+                fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, error: 'Invalid request' }));
+            }
+        });
+        return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/admin/user/device/reject') {
+        const pwd = parsedUrl.searchParams.get('pwd');
+        const adminPassword = getAdminPassword();
+        if (pwd !== adminPassword) {
+            res.writeHead(401);
+            return res.end('Unauthorized');
+        }
+
+        let body = '';
+        req.on('data', chunk => body += chunk.toString());
+        req.on('end', () => {
+            try {
+                const data = JSON.parse(body);
+                const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+                users.forEach(user => ensureSecurityFields(user));
+                const user = users.find(u => u.username === data.username);
+
+                if (!user) {
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'User not found' }));
+                }
+
+                const deviceId = normalizeDeviceId(data.deviceId);
+                const pendingIndex = user.pendingDevices.findIndex(device => device.id === deviceId);
+                if (pendingIndex === -1) {
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'Pending device not found' }));
+                }
+
+                const [pendingDevice] = user.pendingDevices.splice(pendingIndex, 1);
+                recordSecurityEvent(user, 'admin_rejected_device', {
+                    ip: clientIp,
+                    deviceId,
+                    clientSummary: pendingDevice.clientSummary || null
+                });
+
+                fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, error: 'Invalid request' }));
+            }
+        });
+        return;
+    }
+
     if (req.method === 'POST' && pathname === '/api/admin/user/reset-devices') {
         const pwd = parsedUrl.searchParams.get('pwd');
         const adminPassword = getAdminPassword();
@@ -798,6 +1015,8 @@ const server = http.createServer((req, res) => {
                 }
 
                 user.devices = [];
+                user.pendingDevices = [];
+                user.activeSession = null;
                 recordSecurityEvent(user, 'admin_reset_devices', { ip: clientIp });
 
                 fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
@@ -1016,7 +1235,9 @@ const server = http.createServer((req, res) => {
                 username: user,
                 pdfVersion: file,
                 ip: clientIp,
-                action: 'open_document'
+                action: 'open_document',
+                deviceId,
+                clientSummary: userData.activeSession ? userData.activeSession.clientSummary : null
             });
 
         } catch(e) {

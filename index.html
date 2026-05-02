@@ -758,6 +758,35 @@
             return 'Browser';
         }
 
+        function getClientDetails() {
+            const orientation = screen.orientation && screen.orientation.type ? screen.orientation.type : '';
+            return {
+                deviceLabel: getDeviceLabel(),
+                userAgent: navigator.userAgent || '',
+                platform: navigator.platform || '',
+                vendor: navigator.vendor || '',
+                language: navigator.language || '',
+                languages: Array.from(navigator.languages || []),
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+                cookieEnabled: navigator.cookieEnabled,
+                standalone: Boolean(navigator.standalone),
+                maxTouchPoints: navigator.maxTouchPoints || 0,
+                screen: {
+                    width: screen.width,
+                    height: screen.height,
+                    availWidth: screen.availWidth,
+                    availHeight: screen.availHeight,
+                    colorDepth: screen.colorDepth
+                },
+                viewport: {
+                    width: window.innerWidth,
+                    height: window.innerHeight,
+                    devicePixelRatio: window.devicePixelRatio || 1,
+                    orientation
+                }
+            };
+        }
+
         function safeStorageClear() {
             try {
                 localStorage.clear();
@@ -909,7 +938,13 @@
                         const regRes = await fetch('/api/register', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ username, password })
+                            body: JSON.stringify({
+                                username,
+                                password,
+                                deviceId: getOrCreateDeviceId(),
+                                deviceLabel: getDeviceLabel(),
+                                clientDetails: getClientDetails()
+                            })
                         });
                         const regData = await regRes.json();
                         if (!regData.success) {
@@ -927,7 +962,7 @@
                     const res = await fetch('/api/login', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ username, password, pdfVersion, deviceId, deviceLabel })
+                        body: JSON.stringify({ username, password, pdfVersion, deviceId, deviceLabel, clientDetails: getClientDetails() })
                     });
 
                     const data = await res.json();

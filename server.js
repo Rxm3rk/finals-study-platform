@@ -1,4 +1,5 @@
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -13,6 +14,8 @@ process.on('unhandledRejection', (reason, promise) => {
 
 
 const PORT = process.env.PORT || 3000;
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 // Dedicated Volume Persistent Storage Mapping
 const VOL_PATH = '/app/data';
 const IS_PROD_VOL = fs.existsSync(VOL_PATH);
@@ -121,6 +124,59 @@ function readAnnotationMapFromPath(annotationPath) {
 
 function getAdminPassword() {
     return process.env.ADMIN_PASSWORD || 'rxm3rk_admin';
+}
+
+function sendTelegramRegistrationNotification(user) {
+    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
+
+    try {
+        const summary = user.registrationClientSummary || {};
+        const lines = [
+            'New user registered',
+            `Username: ${user.username}`,
+            `Time: ${user.createdAt}`,
+            `IP: ${user.ip || 'Unknown'}`
+        ];
+
+        if (summary.deviceLabel || summary.platform || summary.timezone || summary.screen || summary.viewport) {
+            lines.push(
+                `Device: ${summary.deviceLabel || 'Unknown'}`,
+                `Platform: ${summary.platform || 'Unknown'}`,
+                `Timezone: ${summary.timezone || 'Unknown'}`,
+                `Screen: ${summary.screen || 'Unknown'}`,
+                `Viewport: ${summary.viewport || 'Unknown'}`
+            );
+        }
+
+        const payload = JSON.stringify({
+            chat_id: TELEGRAM_CHAT_ID,
+            text: lines.join('\n')
+        });
+        const request = https.request({
+            hostname: 'api.telegram.org',
+            path: `/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(payload)
+            }
+        }, response => {
+            response.resume();
+            if (response.statusCode < 200 || response.statusCode >= 300) {
+                console.warn(`[WARN] Telegram registration notification failed with status ${response.statusCode}`);
+            }
+        });
+
+        request.setTimeout(3000, () => {
+            request.destroy(new Error('Telegram request timed out'));
+        });
+        request.on('error', error => {
+            console.warn('[WARN] Telegram registration notification failed:', error.message);
+        });
+        request.end(payload);
+    } catch (error) {
+        console.warn('[WARN] Telegram registration notification failed:', error.message);
+    }
 }
 
 function limitString(value, maxLength = 160) {
@@ -534,6 +590,7 @@ const server = http.createServer((req, res) => {
                 updateUserActivity(newUser, clientIp);
                 users.push(newUser);
                 fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+                sendTelegramRegistrationNotification(newUser);
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: true }));
             } catch (err) {

@@ -99,11 +99,13 @@ function dismissAnnouncementForUser(user, announcementId) {
 
 function appendAccessLog(entry) {
     const dbData = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-    dbData.push({
+    const logEntry = {
         timestamp: new Date().toISOString(),
         ...entry
-    });
+    };
+    dbData.push(logEntry);
     fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2));
+    sendTelegramAccessLogNotification(logEntry);
 }
 
 function getAnnotationStorageFile(user, file) {
@@ -183,6 +185,39 @@ function sendTelegramRegistrationNotification(user) {
         chat_id: TELEGRAM_CHAT_ID,
         text: lines.join('\n')
     }, 'Telegram registration notification');
+}
+
+function sendTelegramAccessLogNotification(logEntry) {
+    if (!TELEGRAM_CHAT_ID) return;
+
+    const summary = logEntry.clientSummary || {};
+    const lines = [
+        'Access history update',
+        `Action: ${logEntry.action || 'access'}`,
+        `Username: ${logEntry.username || 'Unknown'}`,
+        `PDF: ${logEntry.pdfVersion || 'Unknown'}`,
+        `Time: ${logEntry.timestamp}`,
+        `IP: ${logEntry.ip || 'Unknown'}`
+    ];
+
+    if (logEntry.deviceId) {
+        lines.push(`Device ID: ${logEntry.deviceId}`);
+    }
+
+    if (summary.deviceLabel || summary.platform || summary.timezone || summary.screen || summary.viewport) {
+        lines.push(
+            `Device: ${summary.deviceLabel || 'Unknown'}`,
+            `Platform: ${summary.platform || 'Unknown'}`,
+            `Timezone: ${summary.timezone || 'Unknown'}`,
+            `Screen: ${summary.screen || 'Unknown'}`,
+            `Viewport: ${summary.viewport || 'Unknown'}`
+        );
+    }
+
+    sendTelegramApiRequest('sendMessage', {
+        chat_id: TELEGRAM_CHAT_ID,
+        text: lines.join('\n')
+    }, 'Telegram access log notification');
 }
 
 function limitString(value, maxLength = 160) {
